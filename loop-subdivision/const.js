@@ -8,10 +8,12 @@ const cone = "圆锥体";
 const torus = "六边环";
 const teapot = "茶杯";
 const bunny = "兔子";
+//预定义的几何图形
 let predefinedGeometries = [];
-let materials = [];
+//预定义的材质
+let predefineMaterials = [];
 //定义图形选择下拉框
-let predefinedGeometriesNames = [
+let geometriesNamesSelected = [
     tetrahedron,
     cube,
     sphere,
@@ -23,7 +25,7 @@ let predefinedGeometriesNames = [
     teapot,
     bunny
 ];
-let materialNames = [
+let materialNamesSelected = [
     'phongFlat',
     'phongSmooth',
     'lambert',

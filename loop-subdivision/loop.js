@@ -1,5 +1,9 @@
 'use-strict';
 
+
+//页面加载完成后调用init方法
+window.addEventListener('load', init);
+
 // monkey-patch 图形界面插件
 dat.GUI.prototype.removeFolder = function (fldl) {
 	let name = fldl.name;
@@ -15,7 +19,7 @@ dat.GUI.prototype.removeFolder = function (fldl) {
 
 
 //界面选择的初始化参数
-let params = {
+let panelShowParams = {
 	geometry: tetrahedron,
 	subdivAmount: 0,
 	material: 'phongFlat',
@@ -35,7 +39,7 @@ let paramControllers = {
 
 //当前面板中选中的参数
 let currentParams = {
-	currentGeometryName: params.geometry,
+	currentGeometryName: panelShowParams.geometry,
 	subdivAmount: -1,
 	originalGeometry: null,
 	currentGeometry: null,
@@ -44,11 +48,11 @@ let currentParams = {
 	origMesh: null,
 	wireMat: null,
 	origMat: null,
-	meshColor: new THREE.Color(parseInt(params.meshColor.replace('#', '0x'))),
-	wireColor: new THREE.Color(parseInt(params.wireColor.replace('#', '0x'))),
-	originalColor: new THREE.Color(parseInt(params.originalColor.replace('#', '0x'))),
-	backgroundColor: new THREE.Color(parseInt(params.backgroundColor.replace('#', '0x'))),
-	material: params.material,
+	meshColor: new THREE.Color(parseInt(panelShowParams.meshColor.replace('#', '0x'))),
+	wireColor: new THREE.Color(parseInt(panelShowParams.wireColor.replace('#', '0x'))),
+	originalColor: new THREE.Color(parseInt(panelShowParams.originalColor.replace('#', '0x'))),
+	backgroundColor: new THREE.Color(parseInt(panelShowParams.backgroundColor.replace('#', '0x'))),
+	material: panelShowParams.material,
 };
 
 //新的面对象，e为坐标
@@ -64,8 +68,8 @@ let EMVertex = function() {
 //定义数据结构EMEdge
 let EMEdge = function() {
 	this.v = new Uint32Array(2);
-	this.f = new Uint32Array(2);
 	this.ov = new Uint32Array(2);
+	//获取与传入顶点不同的点
 	this.getOpposite = function(vi) {
 		return (this.v[0] == vi ? this.v[1] : this.v[0]);
 	}
@@ -82,13 +86,14 @@ let EdgeMesh = function() {
 	this.edgeMap = [];
 	// v0 - 第一个顶点的索引
 	// v1 - 第二个顶点的索引
-	// fi - 面的索引
-	// ei - 面上边的索引
-	// ov - 当前面边的对顶点
+	// fi - 第fi个面
+	// ei - 第fi个面上的第ei条边--局部索引
+	// ov - 当前面边的对顶点索引
 	this.processEdge = function(v0, v1, fi, ei, ov) {
 		const minV = Math.min(v0, v1);
 		const maxV = Math.max(v0, v1);
 		let edgeIndex = -1;
+		//给边命名作为key，存放边的全局索引
 		let edgeKey = minV.toString() + '_' + maxV.toString();
 		if (edgeKey in this.edgeMap) {
 			edgeIndex = this.edgeMap[edgeKey];
@@ -100,9 +105,7 @@ let EdgeMesh = function() {
 			let edge = new EMEdge;
 			edge.v[0] = minV;
 			edge.v[1] = maxV;
-			edge.f[0] = fi;
 			edge.ov[0] = ov;
-			edge.f[1] = uint32Max;
 			edge.ov[1] = ov;
 			edgeIndex = this.edges.length;
 			this.edges.push(edge);
@@ -111,7 +114,6 @@ let EdgeMesh = function() {
 			this.vertices[maxV].e.push(edgeIndex);
 		} else {
 			// 给点添加另一个面
-			this.edges[edgeIndex].f[1] = fi;
 			this.edges[edgeIndex].ov[1] = ov;
 		}
 		// 更新面数组中边的索引
@@ -128,6 +130,7 @@ let EdgeMesh = function() {
 			this.faces.push(new EMFace);
 			// 遍历顶点检查边
 			const faceArrayIndex = fi / 3;
+			//注意，此处ei必须要和index里的顺序由小到大对上，否则后续无法计算新增端点处在什么位置
 			this.processEdge(indices[fi    ], indices[fi + 1], faceArrayIndex, 0, indices[fi + 2]);
 			this.processEdge(indices[fi + 1], indices[fi + 2], faceArrayIndex, 1, indices[fi    ]);
 			this.processEdge(indices[fi + 2], indices[fi    ], faceArrayIndex, 2, indices[fi + 1]);
@@ -165,10 +168,12 @@ let Subdivision = function(geometry) {
 		}
 		this.initialGeometry.addAttribute('position', new THREE.BufferAttribute(vertices, 3));
 		this.initialGeometry.setIndex(new THREE.BufferAttribute(indices, 1));
+		//计算法线
 		this.initialGeometry.computeVertexNormals();
 	} else {
 		this.initialGeometry = new THREE.BufferGeometry().copy(geometry);
 	}
+	//计算边界
 	this.initialGeometry.computeBoundingSphere();
 	this.cachedSubdivisions = [];
 	this.info = [{
@@ -224,7 +229,8 @@ let Subdivision = function(geometry) {
 		//    o---o
 		//     \ /
 		//      o
-		//
+
+		//欧拉公式
 		const Chi = oldVertCount - oldEdgeCount + oldFaceCount;
 		const newEdgeCount = oldEdgeCount * 2 + oldFaceCount * 3;
 		const newFaceCount = oldFaceCount * 4;
@@ -233,7 +239,7 @@ let Subdivision = function(geometry) {
 
         //  loop算法
         //  Step 1 - 计算原顶点更新后的坐标
-		//计算β值
+		//遍历的方式寻找顶点中连接边数的最大值，计算各个类型的β值
 		let maxValency = -1;
 		for (let vi = 0; vi < oldVertCount; ++vi) {
 			maxValency = Math.max(maxValency, edgeMesh.vertices[vi].e.length);
@@ -241,11 +247,13 @@ let Subdivision = function(geometry) {
 		if (2 >= maxValency) {
 			throw Error('This is no mesh at all');
 		}
+		//计算β值
 		let betaValCache = new BetaValencyCache(maxValency);
 
-		// 分配新的顶点数组
+		// 分配新的顶点数组，存储xyz坐标
 		let newVertexBuffer = new Float32Array(newVertCount * 3);
 
+		//计算原顶点i对应的新坐标
 		for (let i = 0; i < oldVertCount; ++i) {
 			// 保存顶点的值，将会重复利用
 			const vertexValency = edgeMesh.vertices[i].e.length;
@@ -258,6 +266,7 @@ let Subdivision = function(geometry) {
 			let y = vertexWeightBeta * oldVertexBuffer[i * 3 + 1];
 			let z = vertexWeightBeta * oldVertexBuffer[i * 3 + 2];
 			for (let j = 0; j < vertexValency; ++j) {
+				//将点i相邻的点全部提取出，坐标做加权计算
 				const oppositeIndex = edgeMesh.edges[edgeMesh.vertices[i].e[j]].getOpposite(i);
 				x += beta * oldVertexBuffer[oppositeIndex * 3    ];
 				y += beta * oldVertexBuffer[oppositeIndex * 3 + 1];
@@ -279,6 +288,7 @@ let Subdivision = function(geometry) {
 		//    \   /
 		//     \ /
 		//     1/8
+		// 一条边对应一个新增顶点，新增顶点的index = 边index + 旧顶点数
 		for (let i = 0; i < oldEdgeCount; ++i) {
 			const ev0 = edgeMesh.edges[i].v[0];
 			const ev1 = edgeMesh.edges[i].v[1];
@@ -298,7 +308,7 @@ let Subdivision = function(geometry) {
 			newVertexBuffer[nvi * 3 + 2] = z;
 		}
 
-		// Step 3 - 对索引进行计算
+		// Step 3 - 对面相关的索引进行计算
 		// ov2 --- nv1 --- ov1
 		//   \     / \     /
 		//    \   /   \   /
@@ -326,8 +336,8 @@ let Subdivision = function(geometry) {
 			const nv0 = oldVertCount + edgeMesh.faces[i].e[0];
 			const nv1 = oldVertCount + edgeMesh.faces[i].e[1];
 			const nv2 = oldVertCount + edgeMesh.faces[i].e[2];
-			// 添加新的索引到缓存中
-			const offset = i * 12; // 4 * 3
+			// 添加新的索引到缓存中，一个面变成了4个面，所以一个offset的长度是 4 * 3
+			const offset = i * 12;
 
 			newIndexBuffer[offset     ] = ov0;
 			newIndexBuffer[offset +  1] = nv0;
@@ -359,7 +369,7 @@ let Subdivision = function(geometry) {
 
 
 //细分操作 需要传入num - 用户选择细分等级
-function subdivide(num) {
+function makeSubdivition(num) {
 	//如果当前没有细分器，就创建一个
 	if (!subdivider)
 	{
@@ -376,19 +386,13 @@ function subdivide(num) {
 		currentParams.mesh.geometry = currentParams.currentGeometry;
 		currentParams.wireMesh.geometry = currentParams.currentGeometry;
 		//设置是否显示原始模型
-		currentParams.origMesh.visible = params.original && num > 0;
+		currentParams.origMesh.visible = panelShowParams.original && num > 0;
 		//更新信息
 		updateInfo();
 	}
 }
 
-// 当前信息变更
-function updateInfo() {
-	info.innerHTML = '初始顶点数: ' + subdivider.info[0].vertexCount + ' | 初始面片数: ' + subdivider.info[0].faceCount;
-	info.innerHTML += '<br>当前细分级别: ' + currentParams.subdivAmount;
-	info.innerHTML += '<br>当前顶点数: ' + subdivider.info[currentParams.subdivAmount].vertexCount;
-	info.innerHTML += ' | 当前面片数: ' + subdivider.info[currentParams.subdivAmount].faceCount;
-}
+
 
 function changeMeshFromGeometry(geometry) {
 	if (subdivider) {
@@ -396,7 +400,7 @@ function changeMeshFromGeometry(geometry) {
 		delete subdivider;
 		subdivider = null;
 		currentParams.subdivAmount = -1;
-		params.subdivAmount = 0;
+		panelShowParams.subdivAmount = 0;
 		paramControllers.subdivAmount.updateDisplay();
 	}
 	currentParams.originalGeometry = geometry;
@@ -417,11 +421,11 @@ function changeMeshGeometry() {
 		currentParams.originalGeometry.dispose();
 		currentParams.currentGeometryName = '';
 	}
-	if (params.geometry == 'OBJ file...') {
+	if (panelShowParams.geometry == 'OBJ file...') {
 		fopen.click();
 	} else {
-		changeMeshFromGeometry(predefinedGeometries[params.geometry]);
-		currentParams.currentGeometryName = params.geometry;
+		changeMeshFromGeometry(predefinedGeometries[panelShowParams.geometry]);
+		currentParams.currentGeometryName = panelShowParams.geometry;
 	}
 }
 
@@ -447,82 +451,71 @@ function normalizeGeometry(geom) {
 	geom.computeBoundingSphere();
 }
 
-//加载OBJ模型方法
-function loadAsset(predefinedName, assetUrl) {
-	objLoader.load(assetUrl,
-		function(object) {
-			let geom = object.children[0].geometry;
-			let stdGeom = new THREE.Geometry().fromBufferGeometry(geom);
-			stdGeom.computeFaceNormals();
-			stdGeom.mergeVertices();
-			stdGeom.computeVertexNormals();
-			normalizeGeometry(stdGeom);
-			predefinedGeometries[predefinedName] = stdGeom;
-		}
-	);
-}
+
 
 //材质的切换
 function changeMeshMaterial() {
-	currentParams.mesh.material = materials[params.material];
-	currentParams.material = params.material;
+	currentParams.mesh.material = predefineMaterials[panelShowParams.material];
+	currentParams.material = panelShowParams.material;
 	currentParams.mesh.material.needsUpdate = true;
 }
 
 //网格颜色的切换
 function changeMeshColor() {
-	currentParams.meshColor = new THREE.Color(parseInt(params.meshColor.replace('#', '0x')));
-	materials['phongFlat'].color = currentParams.meshColor;
-	materials['phongSmooth'].color = currentParams.meshColor;
-	materials['lambert'].color = currentParams.meshColor;
+	currentParams.meshColor = new THREE.Color(parseInt(panelShowParams.meshColor.replace('#', '0x')));
+	predefineMaterials['phongFlat'].color = currentParams.meshColor;
+	predefineMaterials['phongSmooth'].color = currentParams.meshColor;
+	predefineMaterials['lambert'].color = currentParams.meshColor;
 	currentParams.mesh.material.needsUpdate = true;
 }
 
 //网格线颜色的切换
 function changeWireMeshColor() {
-	info.style.color = params.wireColor;
-	currentParams.wireColor = new THREE.Color(parseInt(params.wireColor.replace('#', '0x')));
+	info.style.color = panelShowParams.wireColor;
+	currentParams.wireColor = new THREE.Color(parseInt(panelShowParams.wireColor.replace('#', '0x')));
 	currentParams.wireMat.color = currentParams.wireColor;
 	currentParams.wireMat.needsUpdate = true;
 }
 
 //修改初始颜色
 function changeOriginalColor() {
-	currentParams.originalColor = new THREE.Color(parseInt(params.originalColor.replace('#', '0x')));
+	currentParams.originalColor = new THREE.Color(parseInt(panelShowParams.originalColor.replace('#', '0x')));
 	currentParams.origMat.color = currentParams.originalColor;
 	currentParams.origMat.needsUpdate = true;
 }
 
 //修改背景颜色
 function changeBackgroundColor() {
-	currentParams.backgroundColor = new THREE.Color(parseInt(params.backgroundColor.replace('#', '0x')));
+	currentParams.backgroundColor = new THREE.Color(parseInt(panelShowParams.backgroundColor.replace('#', '0x')));
 	renderer.setClearColor(currentParams.backgroundColor);
 }
 
 //切换是否显示网格曲面
 function changeMeshSurface() {
-	currentParams.mesh.visible = params.surface;
+	currentParams.mesh.visible = panelShowParams.surface;
 }
 
 //切换是否显示网格线
 function changeMeshWireframe() {
-	currentParams.wireMesh.visible = params.wireframe;
+	currentParams.wireMesh.visible = panelShowParams.wireframe;
 }
 
 //原模型是否可见
 function changeMeshOriginal() {
-	currentParams.origMesh.visible = params.original && currentParams.subdivAmount > 0;
+	currentParams.origMesh.visible = panelShowParams.original && currentParams.subdivAmount > 0;
 }
 
 //默认几何形体加入场景
 function createDefaultGeometry() {
-	//读取原始的几何模型
-	currentParams.originalGeometry = predefinedGeometries[params.geometry];
+	//读取初始的几何模型
+	currentParams.originalGeometry = predefinedGeometries[panelShowParams.geometry];
 	//细分器初始化，细分等级默认0初值
 	subdivider = new Subdivision(currentParams.originalGeometry);
+	//几何形体设定
 	currentParams.currentGeometry = subdivider.subdivide(0);
+	//细分等级设定
 	currentParams.subdivAmount = 0;
-	//使用three.js生成初始的几何模型
+	//使用three.js根据几何形体设置初始的网格
 	currentParams.mesh = new THREE.Mesh(
 		currentParams.currentGeometry
 	);
@@ -533,6 +526,7 @@ function createDefaultGeometry() {
 	scene.add(currentParams.mesh);
 
 	//three.js生成网格线并加入
+	//几何体是不能被渲染的，只有几何体和材质结合成网格才能被渲染到屏幕上
 	currentParams.wireMesh = new THREE.Mesh(
 		currentParams.currentGeometry,
 		currentParams.wireMat
@@ -567,18 +561,18 @@ function createPredefinedGeometries() {
 }
 
 //创建各种材质
-function createMaterials() {
+function createPredefinedMaterials() {
 	let commonPhongParams = {
 		color: currentParams.meshColor,
 		shininess: 40,
 		specular: 0x222222
 	};
-	materials['phongFlat'] = new THREE.MeshPhongMaterial(commonPhongParams);
-	materials['phongFlat'].shading = THREE.FlatShading;
-	materials['phongSmooth'] = new THREE.MeshPhongMaterial(commonPhongParams);
-	materials['phongSmooth'].shading = THREE.SmoothShading;
-	materials['lambert'] = new THREE.MeshLambertMaterial({color: currentParams.meshColor});
-	materials['normal'] = new THREE.MeshNormalMaterial();
+	predefineMaterials['phongFlat'] = new THREE.MeshPhongMaterial(commonPhongParams);
+	predefineMaterials['phongFlat'].shading = THREE.FlatShading;
+	predefineMaterials['phongSmooth'] = new THREE.MeshPhongMaterial(commonPhongParams);
+	predefineMaterials['phongSmooth'].shading = THREE.SmoothShading;
+	predefineMaterials['lambert'] = new THREE.MeshLambertMaterial({color: currentParams.meshColor});
+	predefineMaterials['normal'] = new THREE.MeshNormalMaterial();
 	// 创建线框材质
 	currentParams.wireMat = new THREE.MeshBasicMaterial({
 		color: currentParams.wireColor,
@@ -591,7 +585,7 @@ function createMaterials() {
 }
 //自动旋转开闭
 function changeAutoRotation() {
-	if (!params.autoRotate) {
+	if (!panelShowParams.autoRotate) {
 		currentParams.mesh.rotation.x = 0;
 		currentParams.mesh.rotation.y = 0;
 		currentParams.wireMesh.rotation.x = 0;
@@ -642,29 +636,10 @@ function init() {
 	container.appendChild(renderer.domElement);
 
 	//设置当前信息变化看板的参数
-	info = document.createElement('div');
-	info.style.position = 'absolute';
-	info.style.top = '10px';
-	info.style.width = '100%';
-	info.style.textAlign = 'center';
-	info.style.color = '#ffffff';
-	info.innerHTML = '';
-	container.appendChild(info);
+	initInfo();
 
-	//dat.GUI中挂载各类下拉框和拉升条及回调函数，并且在内部执行回调操作为param的对应参数赋用户选择的值
-	gui = new dat.GUI();
-	gui.add(params, 'geometry', predefinedGeometriesNames).name("几何形体").onChange(changeMeshGeometry);
-	//为选择条挂载loop细分操作函数
-	paramControllers.subdivAmount = gui.add(params, 'subdivAmount', 0, subdivMax).name("细分等级").step(1).onChange(subdivide);
-	gui.add(params, 'material', materialNames).name("材质").onChange(changeMeshMaterial);
-	gui.addColor(params, 'meshColor').name('颜色').onChange(changeMeshColor);
-	gui.add(params, 'surface').name("展示/隐藏表面").onChange(changeMeshSurface);
-	gui.addColor(params, 'wireColor').name('线框颜色').onChange(changeWireMeshColor);
-	gui.add(params, 'wireframe').name("展示/隐藏线框").onChange(changeMeshWireframe);
-	gui.addColor(params, 'originalColor').name('初始颜色').onChange(changeOriginalColor);
-	gui.add(params, 'original').name('展示/隐藏初始').onChange(changeMeshOriginal);
-	gui.addColor(params, 'backgroundColor').name('背景色').onChange(changeBackgroundColor);
-	gui.add(params, 'autoRotate').name("自动旋转").onChange(changeAutoRotation);
+	//初始化看板
+	initGUI();
 
 	//创建模型加载器
 	objLoader = new THREE.OBJLoader(loadManager);
@@ -673,7 +648,7 @@ function init() {
     createPredefinedGeometries();
 
     //加载各类材质信息
-	createMaterials();
+	createPredefinedMaterials();
 
 	//在场景中初始化几何形体
 	createDefaultGeometry();
@@ -691,14 +666,13 @@ function init() {
 	animate();
 }
 
-window.addEventListener('load', init);
 
 function updateScene() {
 	if (infoDirty) {
 		updateInfo();
 		infoDirty = false;
 	}
-	if (params.autoRotate) {
+	if (panelShowParams.autoRotate) {
 		let dTime = (Date.now() - startTime) * 0.0005;
 		currentParams.mesh.rotation.x = dTime;
 		currentParams.mesh.rotation.y = dTime;
@@ -728,4 +702,40 @@ function render() {
 	updateScene();
 	//根据场景信息和相机信息进行渲染
 	renderer.render( scene, camera );
+}
+
+function initGUI(){
+	//dat.GUI中挂载各类下拉框和拉升条及回调函数，并且在内部执行回调操作为param的对应参数赋用户选择的值
+	gui = new dat.GUI();
+	gui.add(panelShowParams, 'geometry', geometriesNamesSelected).name("几何形体").onChange(changeMeshGeometry);
+	//设置细分等级范围
+	paramControllers.subdivAmount = gui.add(panelShowParams, 'subdivAmount', 0, subdivMax).name("细分等级").step(1).onChange(makeSubdivition);
+	gui.add(panelShowParams, 'material', materialNamesSelected).name("材质").onChange(changeMeshMaterial);
+	gui.addColor(panelShowParams, 'meshColor').name('颜色').onChange(changeMeshColor);
+	gui.add(panelShowParams, 'surface').name("展示/隐藏表面").onChange(changeMeshSurface);
+	gui.addColor(panelShowParams, 'wireColor').name('线框颜色').onChange(changeWireMeshColor);
+	gui.add(panelShowParams, 'wireframe').name("展示/隐藏线框").onChange(changeMeshWireframe);
+	gui.addColor(panelShowParams, 'originalColor').name('初始颜色').onChange(changeOriginalColor);
+	gui.add(panelShowParams, 'original').name('展示/隐藏初始').onChange(changeMeshOriginal);
+	gui.addColor(panelShowParams, 'backgroundColor').name('背景色').onChange(changeBackgroundColor);
+	gui.add(panelShowParams, 'autoRotate').name("自动旋转").onChange(changeAutoRotation);
+}
+
+function initInfo(){
+	info = document.createElement('div');
+	info.style.position = 'absolute';
+	info.style.top = '10px';
+	info.style.width = '100%';
+	info.style.textAlign = 'center';
+	info.style.color = '#ffffff';
+	info.innerHTML = '';
+	container.appendChild(info);
+}
+
+// 当前信息变更
+function updateInfo() {
+	info.innerHTML = '初始顶点数: ' + subdivider.info[0].vertexCount + ' | 初始面片数: ' + subdivider.info[0].faceCount;
+	info.innerHTML += '<br>当前细分级别: ' + currentParams.subdivAmount;
+	info.innerHTML += '<br>当前顶点数: ' + subdivider.info[currentParams.subdivAmount].vertexCount;
+	info.innerHTML += ' | 当前面片数: ' + subdivider.info[currentParams.subdivAmount].faceCount;
 }
