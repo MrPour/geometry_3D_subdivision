@@ -1,741 +1,369 @@
-'use-strict';
 
-
-//页面加载完成后调用init方法
-window.addEventListener('load', init);
-
-// monkey-patch 图形界面插件
-dat.GUI.prototype.removeFolder = function (fldl) {
-	let name = fldl.name;
-	let folder = this.__folders[name];
-	if (!folder) {
-		return;
-	}
-	folder.close();
-	this.__ul.removeChild(folder.domElement.parentNode);
-	delete this.__folders[name];
-	this.onResize();
+class FaceInfo{
+    faceEdges = new Uint32Array(3);
 }
-
-
-//界面选择的初始化参数
-let panelShowParams = {
-	geometry: tetrahedron,
-	subdivAmount: 0,
-	material: 'phongFlat',
-	meshColor: '#ff9500',
-	surface: true,
-	wireColor: '#ffffff',
-	wireframe: true,
-	originalColor: '#e5e6df',
-	original: true,
-	backgroundColor: '#a3c096',
-	autoRotate: false,
-};
-
-let paramControllers = {
-	subdivAmount: null,
-}
-
-//当前面板中选中的参数
-let currentParams = {
-	currentGeometryName: panelShowParams.geometry,
-	subdivAmount: -1,
-	originalGeometry: null,
-	currentGeometry: null,
-	mesh: null,
-	wireMesh: null,
-	origMesh: null,
-	wireMat: null,
-	origMat: null,
-	meshColor: new THREE.Color(parseInt(panelShowParams.meshColor.replace('#', '0x'))),
-	wireColor: new THREE.Color(parseInt(panelShowParams.wireColor.replace('#', '0x'))),
-	originalColor: new THREE.Color(parseInt(panelShowParams.originalColor.replace('#', '0x'))),
-	backgroundColor: new THREE.Color(parseInt(panelShowParams.backgroundColor.replace('#', '0x'))),
-	material: panelShowParams.material,
-};
-
-//新的面对象，e为坐标
-let EMFace = function() {
-	this.e = new Uint32Array(3);
-}
-
 //新的顶点对象，e为坐标
-let EMVertex = function() {
-	this.e = [];
+class VertexInfo{
+    //长度不定
+    jointEdges = [];
 }
-
 //定义数据结构EMEdge
-let EMEdge = function() {
-	this.v = new Uint32Array(2);
-	this.ov = new Uint32Array(2);
-	//获取与传入顶点不同的点
-	this.getOpposite = function(vi) {
-		return (this.v[0] == vi ? this.v[1] : this.v[0]);
-	}
+class EdgeInfo{
+    endVertices = new Uint32Array(2);
+    oppositeVertices = new Uint32Array(2);
+    jointFaces = new Uint32Array(2);
+    //获取另点
+    getAnotherVertex(vertex){
+        return vertex==this.endVertices[0] ? this.endVertices[1] : this.endVertices[0];
+    }
 }
 
-let EdgeMesh = function() {
-	//面集合
-	this.faces = [];
-	//顶点集合
-	this.vertices = [];
-	//边集合
-	this.edges = [];
-    //边表，使用哈希表更快的查找，以避免双循环，减少时间复杂度
-	this.edgeMap = [];
-	// v0 - 第一个顶点的索引
-	// v1 - 第二个顶点的索引
-	// fi - 第fi个面
-	// ei - 第fi个面上的第ei条边--局部索引
-	// ov - 当前面边的对顶点索引
-	this.processEdge = function(v0, v1, fi, ei, ov) {
-		const minV = Math.min(v0, v1);
-		const maxV = Math.max(v0, v1);
-		let edgeIndex = -1;
-		//给边命名作为key，存放边的全局索引
-		let edgeKey = minV.toString() + '_' + maxV.toString();
-		if (edgeKey in this.edgeMap) {
-			edgeIndex = this.edgeMap[edgeKey];
-		} else {
-			this.edgeMap[edgeKey] = this.edges.length;
-		}
-		// 如果没找到索引，这就是一条新的边
-		if (-1 == edgeIndex) {
-			let edge = new EMEdge;
-			edge.v[0] = minV;
-			edge.v[1] = maxV;
-			edge.ov[0] = ov;
-			edge.ov[1] = ov;
-			edgeIndex = this.edges.length;
-			this.edges.push(edge);
-			// 为顶点添加边的信息
-			this.vertices[minV].e.push(edgeIndex);
-			this.vertices[maxV].e.push(edgeIndex);
-		} else {
-			// 给点添加另一个面
-			this.edges[edgeIndex].ov[1] = ov;
-		}
-		// 更新面数组中边的索引
-		this.faces[fi].e[ei] = edgeIndex;
-	}
+class SubdivideTools{
+    constructor(preVertexArray,preVertexIndexArray) {
+        //面集合
+        this.faces = [];
+        //边集合
+        this.edges = [];
+        //顶点集合
+        this.vertices = [];
+        //索引助手
+        this.edgeIndexHelper = new Map;
+        //初始化
+        this.initRelationShip(preVertexArray,preVertexIndexArray);
+    }
 
-	this.generate = function(vertices, indices) {
-		// 创建所有的顶点
-		for (let vi = 0, vil = vertices.length; vi < vil; vi += 3) {
-			this.vertices.push(new EMVertex);
-		}
-		// 遍历索引，每3个点组成一个三角形
-		for (let fi = 0, fil = indices.length; fi < fil; fi += 3) {
-			this.faces.push(new EMFace);
-			// 遍历顶点检查边
-			const faceArrayIndex = fi / 3;
-			//注意，此处ei必须要和index里的顺序由小到大对上，否则后续无法计算新增端点处在什么位置
-			this.processEdge(indices[fi    ], indices[fi + 1], faceArrayIndex, 0, indices[fi + 2]);
-			this.processEdge(indices[fi + 1], indices[fi + 2], faceArrayIndex, 1, indices[fi    ]);
-			this.processEdge(indices[fi + 2], indices[fi    ], faceArrayIndex, 2, indices[fi + 1]);
-		}
-	}
-}
-//求β需要的计算因子
-let BetaValencyCache = function(maxValency) {
-	this.cache = new Float32Array(maxValency + 1);
-	this.cache[0] = 0.0;
-	this.cache[1] = 0.0;
-	this.cache[2] = 1.0 / 8.0;
-	this.cache[3] = 3.0 / 16.0;
-	for (let i = 4; i < maxValency + 1; ++i) {
-		this.cache[i] = (1.0 / i) * (5.0 / 8.0 - Math.pow( 3.0 / 8.0 + (1.0 / 4.0) * Math.cos( 2.0 * Math.PI / i ), 2.0));
-	}
+    initRelationShip(preVertexArray,preVertexIndexArray)
+    {
+        for(let i = 0;i < preVertexArray.length;i += 3)
+        {
+            //顶点索引
+            this.vertices.push(new VertexInfo());
+        }
+
+        for(let i = 0;i < preVertexIndexArray.length;i += 3)
+        {
+            this.faces.push(new FaceInfo())
+            let fIndex = i / 3;
+            //注意，此处ei必须要和index里的顺序由小到大对上，否则后续无法计算新增端点处在什么位置
+            this.buildRelationShip(preVertexIndexArray[i]  ,preVertexIndexArray[i+1],preVertexIndexArray[i+2],fIndex,0);
+            this.buildRelationShip(preVertexIndexArray[i+1],preVertexIndexArray[i+2],preVertexIndexArray[i],  fIndex,1);
+            this.buildRelationShip(preVertexIndexArray[i+2],preVertexIndexArray[i],  preVertexIndexArray[i+1],fIndex,2);
+        }
+    }
+    // v0 - 第一个顶点的索引
+    // v1 - 第二个顶点的索引
+    // vo - 当前面边的对顶点索引
+    // fIndex - 第fi个面
+    // eIndexLocal - 边的局部索引
+    //生成边相关数据的方法
+    buildRelationShip(v0,v1,vo,fIndex,eIndexLocal)
+    {
+        let edgeIndex = -1;
+        const MIN_V =  Math.min(v0,v1);
+        const MAX_V =  Math.max(v0,v1);
+        //判断边是否已经索引
+        let edgeName = MIN_V+"_"+MAX_V;
+        if(this.edgeIndexHelper.has(edgeName))
+        {
+            edgeIndex = this.edgeIndexHelper.get(edgeName);
+            this.updateEdgeInfoArray(edgeIndex,vo,fIndex);
+        }
+        else
+        {
+            edgeIndex = this.edges.length;
+            this.edgeIndexHelper.set(edgeName,edgeIndex);
+            this.buildEdgeInfoArray(edgeIndex,v0,v1,vo,fIndex);
+            this.buildVertexInfoArray(edgeIndex,v0,v1);
+        }
+        this.faces[fIndex].faceEdges[eIndexLocal] = edgeIndex;
+    }
+    buildEdgeInfoArray(edgeIndex,v0,v1,vo,fIndex)
+    {
+        let edgeInfo = new EdgeInfo();
+        edgeInfo.endVertices[0] = Math.min(v0,v1);
+        edgeInfo.endVertices[1] = Math.max(v0,v1);
+        edgeInfo.oppositeVertices[0] = vo;
+        edgeInfo.oppositeVertices[1] = vo;
+        edgeInfo.jointFaces[0] = fIndex;
+        edgeInfo.jointFaces[1] = fIndex;
+        this.edges[edgeIndex] = edgeInfo;
+    }
+
+    buildVertexInfoArray(edgeIndex,v0,v1)
+    {
+        this.vertices[v0].jointEdges.push(edgeIndex);
+        this.vertices[v1].jointEdges.push(edgeIndex);
+    }
+    updateEdgeInfoArray(edgeIndex,vo,fIndex)
+    {
+        this.edges[edgeIndex].oppositeVertices[1] = vo;
+        this.edges[edgeIndex].jointFaces[1] = fIndex;
+    }
 }
 
+//求β需要的计算因子的类
+class BetaFactorCache{
+    constructor(n)
+    {
+        //考虑0的情况，多存入一个数据
+        this.BetaVlues = new Float32Array(n + 1);
+        this.BetaVlues[0] = 0.0;
+        this.BetaVlues[1] = 0.0;
+        this.BetaVlues[2] = 1.0 / 8.0;
+        this.BetaVlues[3] = 3.0 / 16.0;
+        for(let i = 4; i <= n;++i)
+        {
+            this.BetaVlues[i] = (1.0 / i) * ((5.0 / 8.0 ) - Math.pow((3.0 / 8.0 + (1.0 / 4.0) * Math.cos(2.0 * Math.PI / i)),2));
+        }
+    }
+}
 
 //定义细分器 构造函数需要传入一个模型geometry
-let Subdivision = function(geometry) {
-	if (geometry instanceof THREE.Geometry) {
-		this.initialGeometry = new THREE.BufferGeometry();
-		let vertices = new Float32Array(geometry.vertices.length * 3);
-		for (let i = 0, il = geometry.vertices.length; i < il; ++i) {
-			vertices[i * 3 + 0] = geometry.vertices[i].x;
-			vertices[i * 3 + 1] = geometry.vertices[i].y;
-			vertices[i * 3 + 2] = geometry.vertices[i].z;
-		}
-		let indices = new Uint32Array(geometry.faces.length * 3);
-		for (let i = 0, il = geometry.faces.length; i < il; ++i) {
-			indices[i * 3 + 0] = geometry.faces[i].a;
-			indices[i * 3 + 1] = geometry.faces[i].b;
-			indices[i * 3 + 2] = geometry.faces[i].c;
-		}
-		this.initialGeometry.addAttribute('position', new THREE.BufferAttribute(vertices, 3));
-		this.initialGeometry.setIndex(new THREE.BufferAttribute(indices, 1));
-		//计算法线
-		this.initialGeometry.computeVertexNormals();
-	} else {
-		this.initialGeometry = new THREE.BufferGeometry().copy(geometry);
-	}
-	//计算边界
-	this.initialGeometry.computeBoundingSphere();
-	this.cachedSubdivisions = [];
-	this.info = [{
-		vertexCount: this.initialGeometry.getAttribute('position').array.length / 3,
-		faceCount: this.initialGeometry.getIndex().array.length / 3
-	}];
+class Subdivision{
+    constructor(geometry) {
+        if(geometry instanceof THREE.Geometry)
+        {
+            //BufferAttribute 必须要有 index和 position 属性
+            this.initialGeometry = new THREE.BufferGeometry();
 
-	//下面是各种函数调用的定义
-	this.dispose = function dispose() {
-		this.initialGeometry.dispose();
-		for (let i = 0, il = this.cachedSubdivisions.length; i < il; ++i) {
-			this.cachedSubdivisions[i].dispose();
-		}
-	}
+            let verticesArray = geometry.vertices;
+            let positions  = new Float32Array(verticesArray.length*3);
+            for(let i = 0;i<verticesArray.length;++i)
+            {
+                positions[i * 3    ] = verticesArray[i].x;
+                positions[i * 3 + 1] = verticesArray[i].y;
+                positions[i * 3 + 2] = verticesArray[i].z;
+            }
 
-	this.subdivide = function subdivide(num) {
-		if (num == 0) {
-			return this.initialGeometry;
-		} else if (this.cachedSubdivisions[num - 1]) {
-			return this.cachedSubdivisions[num - 1];
-		} else {
-			let previousSubdiv = this.subdivide(num - 1);
-			let subdivided = this.subdivideGeometry(previousSubdiv);
-			//更新看板信息，展示当前顶点数和面片数
-			this.info[num] = {
-				vertexCount: subdivided.getAttribute('position').array.length / 3,
-				faceCount: subdivided.getIndex().array.length / 3
-			};
-			//存入缓存中
-			this.cachedSubdivisions[num - 1] = subdivided;
-			return subdivided;
-		}
-	}
+            let facesArray = geometry.faces;
+            //二进制的数组，根据定点数量选择Uint8 Uint16 Uint32，注意一定不能使用Int
+            let vIndex  = new Uint32Array(facesArray.length*3);
+            for(let i = 0;i<facesArray.length;++i)
+            {
+                vIndex[i * 3    ] = facesArray[i].a;
+                vIndex[i * 3 + 1] = facesArray[i].b;
+                vIndex[i * 3 + 2] = facesArray[i].c;
+            }
+            //将顶点坐标数据存入，3个为一组，表示顶点位置
+            this.initialGeometry.addAttribute("position",new THREE.BufferAttribute(positions,3));
+            //将面的顶点索引数据存入，1个为1组，表示面
+            this.initialGeometry.setIndex(new THREE.BufferAttribute(vIndex,1));
+            //计算顶点法线
+            this.initialGeometry.computeVertexNormals();
+        }
+        else
+        {
+            this.initialGeometry = new THREE.BufferGeometry().copy(geometry);
+        }
 
-	this.subdivideGeometry = function subdivideGeometry(buffGeom) {
-		let retval = new THREE.BufferGeometry();
-		//顶点缓存
-		let oldVertexBuffer = buffGeom.getAttribute('position').array;
-		//索引缓存
-		let oldIndexBuffer = buffGeom.getIndex().array;
-		let edgeMesh = new EdgeMesh;
-		edgeMesh.generate(oldVertexBuffer, oldIndexBuffer);
-		//初始顶点数目
-		const oldVertCount = edgeMesh.vertices.length;
-		//初始边数目
-		const oldEdgeCount = edgeMesh.edges.length;
-		//初始面数目
-		const oldFaceCount = edgeMesh.faces.length;
+        //计算碰撞边界
+        this.initialGeometry.computeBoundingSphere();
+        //初始化形体缓存数组
+        this.cachedDividedGeometry = [];
+        //初始化看板数据vertexCount和faceCount的缓冲数组
+        this.info = [{
+            //初始顶点数
+            vertexCount : this.initialGeometry.getAttribute("position").array.length / 3,
+            //初始面片数
+            faceCount : this.initialGeometry.getIndex().array.length / 3
+        }]
+    }
+    //析构方法，调用的是BufferGeometry的dispose函数
+    dispose() {
+        this.initialGeometry.dispose();
+        for(let i = 0;i < this.cachedDividedGeometry.length;++i)
+        {
+            this.cachedDividedGeometry[i].dispose();
+        }
+    }
+    subdivide(num){
+        let cacheIndex = num - 1;
+        //如果需要的是最初的版本，直接返回
+        if(num == 0)
+        {
+            return this.initialGeometry;
+        }
+        //判断缓存中是否存在
+        else if(this.cachedDividedGeometry[cacheIndex])
+        {
+            return this.cachedDividedGeometry[cacheIndex];
+        }
+        //没有现成的则直接生成
+        else
+        {
+            //递归调用,在上一个曲面的基础上细分
+            let preGeometry= this.subdivide(num-1);
+            let thisGeometry = this.subdivideCore(preGeometry);
+            //存入缓存
+            this.cachedDividedGeometry[cacheIndex] = thisGeometry;
+            //存入看板数据vertexCount和faceCount
+            this.info[num] = {
+                //初始顶点数
+                vertexCount : thisGeometry.getAttribute("position").array.length/3,
+                //初始面片数
+                faceCount : thisGeometry.getIndex().array.length/3
+            }
+            return thisGeometry;
+        }
+    }
+    //细分核心方法
+    subdivideCore(buffGeom){
+        //坐标
+        let preVertexArray = buffGeom.getAttribute("position").array;
+        //索引
+        let preVertexIndexArray = buffGeom.getIndex().array;
+        //初始化工具类
+        let tools =  new SubdivideTools(preVertexArray,preVertexIndexArray);
+        //初始顶点数目
+        const oldVTotal = tools.vertices.length;
+        //初始边数目
+        const oldETotal = tools.edges.length;
+        //初始面数目
+        const oldFTotal = tools.faces.length;
 
-		// 对一个三角形面片细分时，将增加4个面，每个面拥有3条新边，每个边细分为2条新边
-		//  o---o---o
-		//   \ / \ /
-		//    o---o
-		//     \ /
-		//      o
+        //欧拉公式计算细分后的数据
+        const Euler = oldVTotal - oldETotal + oldFTotal;
+        const newFTotal = oldFTotal * 4;
+        const newETotal = oldETotal * 2 + oldFTotal * 3;
+        const newVTotal  = newETotal - newFTotal + Euler;
 
-		//欧拉公式
-		const Chi = oldVertCount - oldEdgeCount + oldFaceCount;
-		const newEdgeCount = oldEdgeCount * 2 + oldFaceCount * 3;
-		const newFaceCount = oldFaceCount * 4;
-		const newVertCount = newEdgeCount - newFaceCount + Chi;
-
+        // 对一个三角形面片细分时，将增加3个面，每个面拥有3条新边，每个边细分为2条新边
+        //  o---o---o
+        //   \ / \ /
+        //    o---o
+        //     \ /
+        //      o
 
         //  loop算法
         //  Step 1 - 计算原顶点更新后的坐标
-		//遍历的方式寻找顶点中连接边数的最大值，计算各个类型的β值
-		let maxValency = -1;
-		for (let vi = 0; vi < oldVertCount; ++vi) {
-			maxValency = Math.max(maxValency, edgeMesh.vertices[vi].e.length);
-		}
-		if (2 >= maxValency) {
-			throw Error('This is no mesh at all');
-		}
-		//计算β值
-		let betaValCache = new BetaValencyCache(maxValency);
+        //遍历的方式寻找顶点中连接边数的最大值，计算各个类型的β值
+        let maxECount = -1;
+        for(let i = 0;i < oldVTotal ; ++i)
+        {
+            let temp = tools.vertices[i].jointEdges.length;
+            maxECount = maxECount > temp ? maxECount : temp;
+        }
+        if (2 >= maxECount) {
+            throw Error('This is sth wrong');
+        }
+        //计算β值
+        const betaCache = new BetaFactorCache(maxECount);
+        // 分配新的顶点数组，存储xyz坐标
+        let newPositions = new Float32Array(newVTotal * 3);
+        //计算原顶点i对应的新坐标
+        for(let i = 0;i < oldVTotal; ++i)
+        {
+            // 当前顶点的边数
+            const n = tools.vertices[i].jointEdges.length;
+            // 为顶点数获取适当的值
+            const β = betaCache.BetaVlues[n];
+            //计算系数
+            const factor = 1 - n * β;
+            // 根据β值权重进行顶点计算
+            let x = preVertexArray[i * 3    ] * factor;
+            let y = preVertexArray[i * 3 + 1] * factor;
+            let z = preVertexArray[i * 3 + 2] * factor;
+            for (let j = 0;j < n ; ++j)
+            {
+                //加权求和
+                const edgeIndex = tools.vertices[i].jointEdges[j];
+                const anotherVertex = tools.edges[edgeIndex].getAnotherVertex(i);
+                console.log("opposite:"+anotherVertex)
+                x += β * preVertexArray[anotherVertex * 3    ];
+                y += β * preVertexArray[anotherVertex * 3 + 1];
+                z += β * preVertexArray[anotherVertex * 3 + 2];
+            }
+            //更新坐标
+            newPositions[i * 3    ] = x;
+            newPositions[i * 3 + 1] = y;
+            newPositions[i * 3 + 2] = z;
+        }
 
-		// 分配新的顶点数组，存储xyz坐标
-		let newVertexBuffer = new Float32Array(newVertCount * 3);
+        // Step 2 - 计算新的顶点信息
+        //     1/8
+        //     / \
+        //    /   \
+        //   /     \
+        // 3/8 --- 3/8
+        //   \     /
+        //    \   /
+        //     \ /
+        //     1/8
+        // 一条边对应一个新增顶点，新增顶点的index = 边index + 旧顶点数
+        // 新的顶点索引值
+        for(let i = 0;i < oldETotal; ++i)
+        {
+            const v0 = tools.edges[i].endVertices[0];
+            const v1 = tools.edges[i].endVertices[1];
+            const opv0 = tools.edges[i].oppositeVertices[0];
+            const opv1 = tools.edges[i].oppositeVertices[1];
+            let x = (3.0 / 8.0) * (preVertexArray[v0 * 3    ] + preVertexArray[v1 * 3    ] )
+                + (1.0 / 8.0) * (preVertexArray[opv0 * 3   ] + preVertexArray[opv1 * 3    ]);
+            let y = (3.0 / 8.0) * (preVertexArray[v0 * 3 + 1] + preVertexArray[v1 * 3 + 1] )
+                + (1.0 / 8.0) * (preVertexArray[opv0 * 3 + 1] + preVertexArray[opv1 * 3 + 1]);
+            let z = (3.0 / 8.0) * (preVertexArray[v0 * 3 + 2] + preVertexArray[v1 * 3 + 2] )
+                + (1.0 / 8.0) * (preVertexArray[opv0 * 3+ 2] + preVertexArray[opv1 * 3 + 2]);
+            const newVIndex = oldVTotal + i;
+            newPositions[newVIndex * 3    ] = x;
+            newPositions[newVIndex * 3 + 1] = y;
+            newPositions[newVIndex * 3 + 2] = z;
+        }
 
-		//计算原顶点i对应的新坐标
-		for (let i = 0; i < oldVertCount; ++i) {
-			// 保存顶点的值，将会重复利用
-			const vertexValency = edgeMesh.vertices[i].e.length;
-			// 为顶点获取适当的值
-			const beta = betaValCache.cache[vertexValency];
-			const vertexWeightBeta = 1.0 - vertexValency * beta;
 
-			// 根据β值权重进行定点计算
-			let x = vertexWeightBeta * oldVertexBuffer[i * 3    ];
-			let y = vertexWeightBeta * oldVertexBuffer[i * 3 + 1];
-			let z = vertexWeightBeta * oldVertexBuffer[i * 3 + 2];
-			for (let j = 0; j < vertexValency; ++j) {
-				//将点i相邻的点全部提取出，坐标做加权计算
-				const oppositeIndex = edgeMesh.edges[edgeMesh.vertices[i].e[j]].getOpposite(i);
-				x += beta * oldVertexBuffer[oppositeIndex * 3    ];
-				y += beta * oldVertexBuffer[oppositeIndex * 3 + 1];
-				z += beta * oldVertexBuffer[oppositeIndex * 3 + 2];
-			}
-			// 添加更新后的顶点值
-			newVertexBuffer[i * 3    ] = x;
-			newVertexBuffer[i * 3 + 1] = y;
-			newVertexBuffer[i * 3 + 2] = z;
-		}
+        // Step 3 - 对面相关的索引进行计算
+        // ov2 --- nv1 --- ov1
+        //   \     / \     /
+        //    \   /   \   /
+        //     \ /     \ /
+        //     nv2 --- nv0
+        //       \     /
+        //        \   /
+        //         \ /
+        //         ov0
+        // ov == 旧顶点; nv == 新顶点
+        //
+        // 对每个面进行裂变
+        let newIndices = new Uint32Array(newFTotal * 3);
+        for(let i = 0;i < oldFTotal; ++i)
+        {
+            const ov0 = preVertexIndexArray[i * 3    ];
+            const ov1 = preVertexIndexArray[i * 3 + 1];
+            const ov2 = preVertexIndexArray[i * 3 + 2];
 
-		// Step 2 - 计算新的顶点信息
-		//     1/8
-		//     / \
-		//    /   \
-		//   /     \
-		// 3/8 --- 3/8
-		//   \     /
-		//    \   /
-		//     \ /
-		//     1/8
-		// 一条边对应一个新增顶点，新增顶点的index = 边index + 旧顶点数
-		for (let i = 0; i < oldEdgeCount; ++i) {
-			const ev0 = edgeMesh.edges[i].v[0];
-			const ev1 = edgeMesh.edges[i].v[1];
-			const fv0 = edgeMesh.edges[i].ov[0];
-			const fv1 = edgeMesh.edges[i].ov[1];
-			let x = (3.0 / 8.0) * (oldVertexBuffer[ev0 * 3    ] + oldVertexBuffer[ev1 * 3    ]);
-			let y = (3.0 / 8.0) * (oldVertexBuffer[ev0 * 3 + 1] + oldVertexBuffer[ev1 * 3 + 1]);
-			let z = (3.0 / 8.0) * (oldVertexBuffer[ev0 * 3 + 2] + oldVertexBuffer[ev1 * 3 + 2]);
-			x += (1.0 / 8.0) * (oldVertexBuffer[fv0 * 3    ] + oldVertexBuffer[fv1 * 3    ]);
-			y += (1.0 / 8.0) * (oldVertexBuffer[fv0 * 3 + 1] + oldVertexBuffer[fv1 * 3 + 1]);
-			z += (1.0 / 8.0) * (oldVertexBuffer[fv0 * 3 + 2] + oldVertexBuffer[fv1 * 3 + 2]);
-			// 新的顶点索引值
-			const nvi = oldVertCount + i;
-			// 设置新的顶点值
-			newVertexBuffer[nvi * 3    ] = x;
-			newVertexBuffer[nvi * 3 + 1] = y;
-			newVertexBuffer[nvi * 3 + 2] = z;
-		}
+            const nv0 = oldVTotal + tools.faces[i].faceEdges[0];
+            const nv1 = oldVTotal + tools.faces[i].faceEdges[1];
+            const nv2 = oldVTotal + tools.faces[i].faceEdges[2];
 
-		// Step 3 - 对面相关的索引进行计算
-		// ov2 --- nv1 --- ov1
-		//   \     / \     /
-		//    \   /   \   /
-		//     \ /     \ /
-		//     nv2 --- nv0
-		//       \     /
-		//        \   /
-		//         \ /
-		//         ov0
-		// ov == 旧顶点; nv == 新顶点
-		// 新面的索引如下所示：
-		//  ov0  nv0  nv2
-		//  nv0  ov1  nv1
-		//  nv1  ov2  nv2
-		//  nv0  nv1  nv2
-		//
-		let newIndexBuffer = new Uint32Array(newFaceCount * 3);
-		for (let i = 0; i < oldFaceCount; ++i) {
-			const ov0 = oldIndexBuffer[i * 3    ];
-			const ov1 = oldIndexBuffer[i * 3 + 1];
-			const ov2 = oldIndexBuffer[i * 3 + 2];
-			// 通过网格面获得新的顶点索引信息，因为网格面保存了边的索引信息
-			// 在新的网格体里，边的索引顺序和新顶点的索引构造顺序相同
-			// 只需要索引加上旧顶点计数的偏移量即可
-			const nv0 = oldVertCount + edgeMesh.faces[i].e[0];
-			const nv1 = oldVertCount + edgeMesh.faces[i].e[1];
-			const nv2 = oldVertCount + edgeMesh.faces[i].e[2];
-			// 添加新的索引到缓存中，一个面变成了4个面，所以一个offset的长度是 4 * 3
-			const offset = i * 12;
+            newIndices[i * 12     ] = ov0;
+            newIndices[i * 12 +  1] = nv0;
+            newIndices[i * 12 +  2] = nv2;
 
-			newIndexBuffer[offset     ] = ov0;
-			newIndexBuffer[offset +  1] = nv0;
-			newIndexBuffer[offset +  2] = nv2;
+            newIndices[i * 12 +  3] = nv0;
+            newIndices[i * 12 +  4] = ov1;
+            newIndices[i * 12 +  5] = nv1;
 
-			newIndexBuffer[offset +  3] = nv0;
-			newIndexBuffer[offset +  4] = ov1;
-			newIndexBuffer[offset +  5] = nv1;
+            newIndices[i * 12 +  6] = nv1;
+            newIndices[i * 12 +  7] = ov2;
+            newIndices[i * 12 +  8] = nv2;
 
-			newIndexBuffer[offset +  6] = nv1;
-			newIndexBuffer[offset +  7] = ov2;
-			newIndexBuffer[offset +  8] = nv2;
+            newIndices[i * 12 +  9] = nv0;
+            newIndices[i * 12 + 10] = nv1;
+            newIndices[i * 12 + 11] = nv2;
+        }
 
-			newIndexBuffer[offset +  9] = nv0;
-			newIndexBuffer[offset + 10] = nv1;
-			newIndexBuffer[offset + 11] = nv2;
-		}
+        let subdivide = new THREE.BufferGeometry();
+        //将顶点坐标数据存入，3个为一组，表示顶点位置
+        subdivide.addAttribute("position",new THREE.BufferAttribute(newPositions,3));
+        //将面的顶点索引数据存入，1个为1组，表示面
+        subdivide.setIndex(new THREE.BufferAttribute(newIndices,1));
+        //计算碰撞范围
+        subdivide.computeBoundingSphere();
+        //计算顶点法线
+        subdivide.computeVertexNormals();
+        console.log(newPositions)
+        console.log(newIndices)
 
-		retval.addAttribute('position', new THREE.BufferAttribute(newVertexBuffer, 3));
-		retval.setIndex(new THREE.BufferAttribute(newIndexBuffer, 1));
-
-		// 清空当前网格
-		delete edgeMesh;
-		retval.computeBoundingSphere();
-		retval.computeVertexNormals();
-		return retval;
-	}
+        return subdivide;
+    }
 }
 
-
-//细分操作 需要传入num - 用户选择细分等级
-function makeSubdivition(num) {
-	//如果当前没有细分器，就创建一个
-	if (!subdivider)
-	{
-		subdivider = new Subdivision(currentParams.originalGeometry);
-	}
-	//如果当前传入的细分等级num与目前渲染的细分等级subdivAmount相等，则不需要执行细分操作，否则执行
-	if (num != currentParams.subdivAmount) {
-		//为当前参数列表赋值
-		currentParams.subdivAmount = num;
-		//调用细分方法进行细分，得到细分后的模型
-		let subdivGeom = subdivider.subdivide(num)
-		//将模型赋到当前参数列表中
-		currentParams.currentGeometry = subdivGeom;
-		currentParams.mesh.geometry = currentParams.currentGeometry;
-		currentParams.wireMesh.geometry = currentParams.currentGeometry;
-		//设置是否显示原始模型
-		currentParams.origMesh.visible = panelShowParams.original && num > 0;
-		//更新信息
-		updateInfo();
-	}
-}
-
-
-
-function changeMeshFromGeometry(geometry) {
-	if (subdivider) {
-		subdivider.dispose();
-		delete subdivider;
-		subdivider = null;
-		currentParams.subdivAmount = -1;
-		panelShowParams.subdivAmount = 0;
-		paramControllers.subdivAmount.updateDisplay();
-	}
-	currentParams.originalGeometry = geometry;
-	currentParams.origMesh.geometry = currentParams.originalGeometry;
-	currentParams.origMesh.visible = false;
-	// 创建一个新的细分器
-	subdivider = new Subdivision(currentParams.originalGeometry);
-	currentParams.currentGeometry = subdivider.subdivide(0);
-	currentParams.subdivAmount = 0;
-	currentParams.mesh.geometry = currentParams.currentGeometry;
-	currentParams.wireMesh.geometry = currentParams.currentGeometry;
-	updateInfo();
-}
-
-function changeMeshGeometry() {
-	if (currentParams.currentGeometryName == 'OBJ file...') {
-		debugger
-		currentParams.originalGeometry.dispose();
-		currentParams.currentGeometryName = '';
-	}
-	if (panelShowParams.geometry == 'OBJ file...') {
-		fopen.click();
-	} else {
-		changeMeshFromGeometry(predefinedGeometries[panelShowParams.geometry]);
-		currentParams.currentGeometryName = panelShowParams.geometry;
-	}
-}
-
-// 将图形初始化到屏幕中央
-function normalizeGeometry(geom) {
-	// 计算边界范围- 得到半径和物体中心
-	geom.computeBoundingSphere();
-	//用球半径求比例尺因子
-	const scaleFactor = defaultRadius / geom.boundingSphere.radius;
-	// 用比例尺因子缩放所有的顶点
-	for (let i = 0, il = geom.vertices.length; i < il; ++i) {
-		geom.vertices[i].multiplyScalar(scaleFactor);
-	}
-	// 重新计算边界范围
-	geom.computeBoundingSphere();
-	// 使用它的中心作为偏移的几何中心
-	let offset = geom.boundingSphere.center;
-	offset.negate();
-	for (let i = 0, il = geom.vertices.length; i < il; ++i) {
-		geom.vertices[i].add(offset);
-	}
-	// 再次计算
-	geom.computeBoundingSphere();
-}
-
-
-
-//材质的切换
-function changeMeshMaterial() {
-	currentParams.mesh.material = predefineMaterials[panelShowParams.material];
-	currentParams.material = panelShowParams.material;
-	currentParams.mesh.material.needsUpdate = true;
-}
-
-//网格颜色的切换
-function changeMeshColor() {
-	currentParams.meshColor = new THREE.Color(parseInt(panelShowParams.meshColor.replace('#', '0x')));
-	predefineMaterials['phongFlat'].color = currentParams.meshColor;
-	predefineMaterials['phongSmooth'].color = currentParams.meshColor;
-	predefineMaterials['lambert'].color = currentParams.meshColor;
-	currentParams.mesh.material.needsUpdate = true;
-}
-
-//网格线颜色的切换
-function changeWireMeshColor() {
-	info.style.color = panelShowParams.wireColor;
-	currentParams.wireColor = new THREE.Color(parseInt(panelShowParams.wireColor.replace('#', '0x')));
-	currentParams.wireMat.color = currentParams.wireColor;
-	currentParams.wireMat.needsUpdate = true;
-}
-
-//修改初始颜色
-function changeOriginalColor() {
-	currentParams.originalColor = new THREE.Color(parseInt(panelShowParams.originalColor.replace('#', '0x')));
-	currentParams.origMat.color = currentParams.originalColor;
-	currentParams.origMat.needsUpdate = true;
-}
-
-//修改背景颜色
-function changeBackgroundColor() {
-	currentParams.backgroundColor = new THREE.Color(parseInt(panelShowParams.backgroundColor.replace('#', '0x')));
-	renderer.setClearColor(currentParams.backgroundColor);
-}
-
-//切换是否显示网格曲面
-function changeMeshSurface() {
-	currentParams.mesh.visible = panelShowParams.surface;
-}
-
-//切换是否显示网格线
-function changeMeshWireframe() {
-	currentParams.wireMesh.visible = panelShowParams.wireframe;
-}
-
-//原模型是否可见
-function changeMeshOriginal() {
-	currentParams.origMesh.visible = panelShowParams.original && currentParams.subdivAmount > 0;
-}
-
-//默认几何形体加入场景
-function createDefaultGeometry() {
-	//读取初始的几何模型
-	currentParams.originalGeometry = predefinedGeometries[panelShowParams.geometry];
-	//细分器初始化，细分等级默认0初值
-	subdivider = new Subdivision(currentParams.originalGeometry);
-	//几何形体设定
-	currentParams.currentGeometry = subdivider.subdivide(0);
-	//细分等级设定
-	currentParams.subdivAmount = 0;
-	//使用three.js根据几何形体设置初始的网格
-	currentParams.mesh = new THREE.Mesh(
-		currentParams.currentGeometry
-	);
-	//加载默认材质
-	changeMeshMaterial();
-
-	//将形初始几何模型加入到THREE.Scene的场景里
-	scene.add(currentParams.mesh);
-
-	//three.js生成网格线并加入
-	//几何体是不能被渲染的，只有几何体和材质结合成网格才能被渲染到屏幕上
-	currentParams.wireMesh = new THREE.Mesh(
-		currentParams.currentGeometry,
-		currentParams.wireMat
-	);
-	scene.add(currentParams.wireMesh);
-
-    //three.js生成原始网格线并加入
-	currentParams.origMesh = new THREE.Mesh(
-		currentParams.originalGeometry,
-		currentParams.origMat
-	);
-	//设置是否可见
-	currentParams.origMesh.visible = false;
-	scene.add(currentParams.origMesh);
-}
-
-//three.js提供的各类模型，对模型进行初始化
-function createPredefinedGeometries() {
-	predefinedGeometries[tetrahedron] = new THREE.TetrahedronGeometry(defaultRadius);
-	predefinedGeometries[cube] = new THREE.BoxGeometry(defaultRadius, defaultRadius, defaultRadius);
-	predefinedGeometries[sphere] = new THREE.SphereGeometry(defaultRadius, 16, 9);
-	predefinedGeometries[icosahedron] = new THREE.IcosahedronGeometry(defaultRadius);
-	predefinedGeometries[dodecahedron] = new THREE.DodecahedronGeometry(defaultRadius);
-	predefinedGeometries[plane] = new THREE.PlaneGeometry(defaultRadius * 2, 2, 2, 2);
-	predefinedGeometries[cone] = new THREE.ConeGeometry(defaultRadius, 8, 8);
-	predefinedGeometries[torus] = new THREE.TorusGeometry(defaultRadius, 1);
-	predefinedGeometries[sphere].mergeVertices();
-	predefinedGeometries[torus].mergeVertices();
-	// 加载单独的obj文件
-	loadAsset(teapot, 'assets/teapot.obj');
-	loadAsset(bunny, 'assets/bunny.obj');
-}
-
-//创建各种材质
-function createPredefinedMaterials() {
-	let commonPhongParams = {
-		color: currentParams.meshColor,
-		shininess: 40,
-		specular: 0x222222
-	};
-	predefineMaterials['phongFlat'] = new THREE.MeshPhongMaterial(commonPhongParams);
-	predefineMaterials['phongFlat'].shading = THREE.FlatShading;
-	predefineMaterials['phongSmooth'] = new THREE.MeshPhongMaterial(commonPhongParams);
-	predefineMaterials['phongSmooth'].shading = THREE.SmoothShading;
-	predefineMaterials['lambert'] = new THREE.MeshLambertMaterial({color: currentParams.meshColor});
-	predefineMaterials['normal'] = new THREE.MeshNormalMaterial();
-	// 创建线框材质
-	currentParams.wireMat = new THREE.MeshBasicMaterial({
-		color: currentParams.wireColor,
-		wireframe: true
-	});
-	currentParams.origMat = new THREE.MeshBasicMaterial({
-		color: currentParams.originalColor,
-		wireframe: true
-	});
-}
-//自动旋转开闭
-function changeAutoRotation() {
-	if (!panelShowParams.autoRotate) {
-		currentParams.mesh.rotation.x = 0;
-		currentParams.mesh.rotation.y = 0;
-		currentParams.wireMesh.rotation.x = 0;
-		currentParams.wireMesh.rotation.y = 0;
-		currentParams.origMesh.rotation.x = 0;
-		currentParams.origMesh.rotation.y = 0;
-		startTime = Date.now();
-	}
-}
-
-
-//界面初始化
-function init() {
-	if (!Detector.webgl)
-		Detector.addGetWebGLMessage();
-	//相机初始化
-	camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, defaultRadius * 10);
-	controls = new THREE.OrbitControls(camera);
-	controls.addEventListener('change', render);
-	//控制器的自定义设置
-	controls.enablePan = false;
-	controls.minDistance = defaultRadius / 4.0;
-	controls.maxDistance = defaultRadius * 4.0;
-	controls.zoomSpeed = defaultRadius / 2.0;
-	controls.target = new THREE.Vector3(0, 0, 0);
-	camera.position.x = defaultRadius * 2.5;
-
-	// THREE.Scene 对象是所有不同对象的容器,也就是说该对象保存所有物体、光源、摄像机以及渲染所需的其他对象
-	scene = new THREE.Scene();
-
-	// 灯光
-	let light = new THREE.DirectionalLight( 0xffffff );
-	light.position.set( 10, 5, 15 );
-	scene.add( light );
-
-	light = new THREE.DirectionalLight( 0x444444 );
-	light.position.set( -10, -5, -15 );
-	scene.add( light );
-
-	light = new THREE.AmbientLight( 0x444444 );
-	scene.add( light );
-
-	// 初始化渲染器
-	renderer = new THREE.WebGLRenderer( {antialias: true } );
-	renderer.setSize( window.innerWidth, window.innerHeight );
-	renderer.setClearColor(currentParams.backgroundColor);
-	container = document.getElementById('container');
-	container.appendChild(renderer.domElement);
-
-	//设置当前信息变化看板的参数
-	initInfo();
-
-	//初始化看板
-	initGUI();
-
-	//创建模型加载器
-	objLoader = new THREE.OBJLoader(loadManager);
-
-    //加载各类模型信息
-    createPredefinedGeometries();
-
-    //加载各类材质信息
-	createPredefinedMaterials();
-
-	//在场景中初始化几何形体
-	createDefaultGeometry();
-
-	//显示信息
-	updateInfo();
-
-	//初始化自动旋转功能
-	updateScene();
-
-	//窗口大小变化时相机随之变化
-	onWindowResize();
-
-	//Three.js执行渲染
-	animate();
-}
-
-
-function updateScene() {
-	if (infoDirty) {
-		updateInfo();
-		infoDirty = false;
-	}
-	if (panelShowParams.autoRotate) {
-		let dTime = (Date.now() - startTime) * 0.0005;
-		currentParams.mesh.rotation.x = dTime;
-		currentParams.mesh.rotation.y = dTime;
-		currentParams.wireMesh.rotation.x = dTime;
-		currentParams.wireMesh.rotation.y = dTime;
-		currentParams.origMesh.rotation.x = dTime;
-		currentParams.origMesh.rotation.y = dTime;
-	}
-}
-
-function animate() {
-	render();
-	//按帧对网页进行重绘
-	requestAnimationFrame(animate);
-	controls.update();
-}
-//窗口变化
-function onWindowResize() {
-	camera.aspect = window.innerWidth / window.innerHeight;
-	camera.updateProjectionMatrix();
-	renderer.setSize( window.innerWidth, window.innerHeight );
-	render();
-}
-
-//渲染函数
-function render() {
-	updateScene();
-	//根据场景信息和相机信息进行渲染
-	renderer.render( scene, camera );
-}
-
-function initGUI(){
-	//dat.GUI中挂载各类下拉框和拉升条及回调函数，并且在内部执行回调操作为param的对应参数赋用户选择的值
-	gui = new dat.GUI();
-	gui.add(panelShowParams, 'geometry', geometriesNamesSelected).name("几何形体").onChange(changeMeshGeometry);
-	//设置细分等级范围
-	paramControllers.subdivAmount = gui.add(panelShowParams, 'subdivAmount', 0, subdivMax).name("细分等级").step(1).onChange(makeSubdivition);
-	gui.add(panelShowParams, 'material', materialNamesSelected).name("材质").onChange(changeMeshMaterial);
-	gui.addColor(panelShowParams, 'meshColor').name('颜色').onChange(changeMeshColor);
-	gui.add(panelShowParams, 'surface').name("展示/隐藏表面").onChange(changeMeshSurface);
-	gui.addColor(panelShowParams, 'wireColor').name('线框颜色').onChange(changeWireMeshColor);
-	gui.add(panelShowParams, 'wireframe').name("展示/隐藏线框").onChange(changeMeshWireframe);
-	gui.addColor(panelShowParams, 'originalColor').name('初始颜色').onChange(changeOriginalColor);
-	gui.add(panelShowParams, 'original').name('展示/隐藏初始').onChange(changeMeshOriginal);
-	gui.addColor(panelShowParams, 'backgroundColor').name('背景色').onChange(changeBackgroundColor);
-	gui.add(panelShowParams, 'autoRotate').name("自动旋转").onChange(changeAutoRotation);
-}
-
-function initInfo(){
-	info = document.createElement('div');
-	info.style.position = 'absolute';
-	info.style.top = '10px';
-	info.style.width = '100%';
-	info.style.textAlign = 'center';
-	info.style.color = '#ffffff';
-	info.innerHTML = '';
-	container.appendChild(info);
-}
-
-// 当前信息变更
-function updateInfo() {
-	info.innerHTML = '初始顶点数: ' + subdivider.info[0].vertexCount + ' | 初始面片数: ' + subdivider.info[0].faceCount;
-	info.innerHTML += '<br>当前细分级别: ' + currentParams.subdivAmount;
-	info.innerHTML += '<br>当前顶点数: ' + subdivider.info[currentParams.subdivAmount].vertexCount;
-	info.innerHTML += ' | 当前面片数: ' + subdivider.info[currentParams.subdivAmount].faceCount;
-}
