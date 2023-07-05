@@ -268,7 +268,6 @@ class Subdivision{
                 //加权求和
                 const edgeIndex = tools.vertices[i].jointEdges[j];
                 const anotherVertex = tools.edges[edgeIndex].getAnotherVertex(i);
-                console.log("opposite:"+anotherVertex)
                 x += β * preVertexArray[anotherVertex * 3    ];
                 y += β * preVertexArray[anotherVertex * 3 + 1];
                 z += β * preVertexArray[anotherVertex * 3 + 2];
@@ -360,9 +359,6 @@ class Subdivision{
         subdivide.computeBoundingSphere();
         //计算顶点法线
         subdivide.computeVertexNormals();
-        console.log(newPositions)
-        console.log(newIndices)
-
         return subdivide;
     }
 }
