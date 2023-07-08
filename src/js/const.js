@@ -29,9 +29,9 @@ module.exports = {
 
     //预定义的几何图形
     predefinedGeometries : [],
-//预定义的材质
+    //预定义的材质
     predefineMaterials : [],
-//定义图形选择下拉框
+    //定义图形选择下拉框
     geometriesNamesSelected : [
         "四面体",
         "立方体",
@@ -42,9 +42,10 @@ module.exports = {
         "圆锥体",
         "六边环",
         "茶杯",
-        "兔子"
+        "兔子",
 ],
-     materialNamesSelected : [
+    //定义材质选择下拉框
+    materialNamesSelected : [
     'phongFlat',
     'phongSmooth',
     'lambert',

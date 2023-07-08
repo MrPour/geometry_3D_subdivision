@@ -1,12 +1,10 @@
-'use-strict';
-
 import DefaultConst from './const.js';
 import {Subdivision} from './loop.js'
 
 import {OrbitControls} from 'three/examples/jsm/controls/OrbitControls';
 import {OBJLoader} from "three/examples/jsm/loaders/OBJLoader";
 
-let subdivider,objLoader,loadManager,fopen,info,gui,stats,container,camera, controls, scene, renderer = null;
+let subdivider,objLoader,loadManager,fopen,info,gui,container,camera, controls, scene, renderer = null;
 
 //页面加载完成后调用init方法
 window.addEventListener('load', init);
@@ -63,7 +61,7 @@ let currentParams = {
 };
 
 //细分操作 需要传入num - 用户选择细分等级
-function makeSubdivition(num)
+function makeSubdivision(num)
 {
 	//如果当前没有细分器，就创建一个
 	if (!subdivider)
@@ -405,7 +403,7 @@ function initGUI(){
 	gui = new dat.GUI();
 	gui.add(panelShowParams, 'geometry', DefaultConst.geometriesNamesSelected).name("几何形体").onChange(changeMeshGeometry);
 	//设置细分等级范围
-	paramControllers.subdivAmount = gui.add(panelShowParams, 'subdivAmount', 0, DefaultConst.subdivMax).name("细分等级").step(1).onChange(makeSubdivition);
+	paramControllers.subdivAmount = gui.add(panelShowParams, 'subdivAmount', 0, DefaultConst.subdivMax).name("细分等级").step(1).onChange(makeSubdivision);
 	gui.add(panelShowParams, 'material', DefaultConst.materialNamesSelected).name("材质").onChange(changeMeshMaterial);
 	gui.addColor(panelShowParams, 'meshColor').name('颜色').onChange(changeMeshColor);
 	gui.add(panelShowParams, 'surface').name("展示/隐藏表面").onChange(changeMeshSurface);

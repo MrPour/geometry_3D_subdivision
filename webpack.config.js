@@ -34,5 +34,8 @@ module.exports = {
                     from:'./assets', to:path.resolve(__dirname,"./dist/assets"),
                 }]
         })
-    ]
+    ],
+    devServer: {
+        hot: false,
+    }
 }
