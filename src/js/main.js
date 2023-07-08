@@ -1,5 +1,12 @@
 'use-strict';
 
+import DefaultConst from './const.js';
+import {Subdivision} from './loop.js'
+
+import {OrbitControls} from 'three/examples/jsm/controls/OrbitControls';
+import {OBJLoader} from "three/examples/jsm/loaders/OBJLoader";
+
+let subdivider,objLoader,loadManager,fopen,info,gui,stats,container,camera, controls, scene, renderer = null;
 
 //页面加载完成后调用init方法
 window.addEventListener('load', init);
@@ -20,7 +27,7 @@ dat.GUI.prototype.removeFolder = function (fldl) {
 
 //界面选择的初始化参数
 let panelShowParams = {
-	geometry: tetrahedron,
+	geometry: DefaultConst.tetrahedron,
 	subdivAmount: 0,
 	material: 'phongFlat',
 	meshColor: '#ff9500',
@@ -68,9 +75,8 @@ function makeSubdivition(num)
 		//为当前参数列表赋值
 		currentParams.subdivAmount = num;
 		//调用细分方法进行细分，得到细分后的模型
-		let subdivGeom = subdivider.subdivide(num)
 		//将模型赋到当前参数列表中
-		currentParams.currentGeometry = subdivGeom;
+		currentParams.currentGeometry = subdivider.subdivide(num);
 		currentParams.mesh.geometry = currentParams.currentGeometry;
 		currentParams.wireMesh.geometry = currentParams.currentGeometry;
 		//设置是否显示原始模型
@@ -85,7 +91,6 @@ function makeSubdivition(num)
 function changeMeshFromGeometry(geometry) {
 	if (subdivider) {
 		subdivider.dispose();
-		delete subdivider;
 		subdivider = null;
 		currentParams.subdivAmount = -1;
 		panelShowParams.subdivAmount = 0;
@@ -112,7 +117,7 @@ function changeMeshGeometry() {
 	if (panelShowParams.geometry == 'OBJ file...') {
 		fopen.click();
 	} else {
-		changeMeshFromGeometry(predefinedGeometries[panelShowParams.geometry]);
+		changeMeshFromGeometry(DefaultConst.predefinedGeometries[panelShowParams.geometry]);
 		currentParams.currentGeometryName = panelShowParams.geometry;
 	}
 }
@@ -122,7 +127,7 @@ function normalizeGeometry(geom) {
 	// 计算边界范围- 得到半径和物体中心
 	geom.computeBoundingSphere();
 	//用球半径求比例尺因子
-	const scaleFactor = defaultRadius / geom.boundingSphere.radius;
+	const scaleFactor = DefaultConst.defaultRadius / geom.boundingSphere.radius;
 	// 用比例尺因子缩放所有的顶点
 	for (let i = 0, il = geom.vertices.length; i < il; ++i) {
 		geom.vertices[i].multiplyScalar(scaleFactor);
@@ -143,7 +148,7 @@ function normalizeGeometry(geom) {
 
 //材质的切换
 function changeMeshMaterial() {
-	currentParams.mesh.material = predefineMaterials[panelShowParams.material];
+	currentParams.mesh.material = DefaultConst.predefineMaterials[panelShowParams.material];
 	currentParams.material = panelShowParams.material;
 	currentParams.mesh.material.needsUpdate = true;
 }
@@ -151,9 +156,9 @@ function changeMeshMaterial() {
 //网格颜色的切换
 function changeMeshColor() {
 	currentParams.meshColor = new THREE.Color(parseInt(panelShowParams.meshColor.replace('#', '0x')));
-	predefineMaterials['phongFlat'].color = currentParams.meshColor;
-	predefineMaterials['phongSmooth'].color = currentParams.meshColor;
-	predefineMaterials['lambert'].color = currentParams.meshColor;
+	DefaultConst.predefineMaterials['phongFlat'].color = currentParams.meshColor;
+	DefaultConst.predefineMaterials['phongSmooth'].color = currentParams.meshColor;
+	DefaultConst.predefineMaterials['lambert'].color = currentParams.meshColor;
 	currentParams.mesh.material.needsUpdate = true;
 }
 
@@ -196,7 +201,7 @@ function changeMeshOriginal() {
 //默认几何形体加入场景
 function createDefaultGeometry() {
 	//读取初始的几何模型
-	currentParams.originalGeometry = predefinedGeometries[panelShowParams.geometry];
+	currentParams.originalGeometry = DefaultConst.predefinedGeometries[panelShowParams.geometry];
 	//细分器初始化，细分等级默认0初值
 	subdivider = new Subdivision(currentParams.originalGeometry);
 	//几何形体设定
@@ -233,19 +238,19 @@ function createDefaultGeometry() {
 
 //three.js提供的各类模型，对模型进行初始化
 function createPredefinedGeometries() {
-	predefinedGeometries[tetrahedron] = new THREE.TetrahedronGeometry(defaultRadius);
-	predefinedGeometries[cube] = new THREE.BoxGeometry(defaultRadius, defaultRadius, defaultRadius);
-	predefinedGeometries[sphere] = new THREE.SphereGeometry(defaultRadius, 16, 9);
-	predefinedGeometries[icosahedron] = new THREE.IcosahedronGeometry(defaultRadius);
-	predefinedGeometries[dodecahedron] = new THREE.DodecahedronGeometry(defaultRadius);
-	predefinedGeometries[plane] = new THREE.PlaneGeometry(defaultRadius * 2, 2, 2, 2);
-	predefinedGeometries[cone] = new THREE.ConeGeometry(defaultRadius, 8, 8);
-	predefinedGeometries[torus] = new THREE.TorusGeometry(defaultRadius, 1);
-	predefinedGeometries[sphere].mergeVertices();
-	predefinedGeometries[torus].mergeVertices();
-	// 加载单独的obj文件
-	loadAsset(teapot, 'assets/teapot.obj');
-	loadAsset(bunny, 'assets/bunny.obj');
+	DefaultConst.predefinedGeometries[DefaultConst.tetrahedron] = new THREE.TetrahedronGeometry(DefaultConst.defaultRadius);
+	DefaultConst.predefinedGeometries[DefaultConst.cube] = new THREE.BoxGeometry(DefaultConst.defaultRadius, DefaultConst.defaultRadius, DefaultConst.defaultRadius);
+	DefaultConst.predefinedGeometries[DefaultConst.sphere] = new THREE.SphereGeometry(DefaultConst.defaultRadius, 16, 9);
+	DefaultConst.predefinedGeometries[DefaultConst.icosahedron] = new THREE.IcosahedronGeometry(DefaultConst.defaultRadius);
+	DefaultConst.predefinedGeometries[DefaultConst.dodecahedron] = new THREE.DodecahedronGeometry(DefaultConst.defaultRadius);
+	DefaultConst.predefinedGeometries[DefaultConst.plane] = new THREE.PlaneGeometry(DefaultConst.defaultRadius * 2, 2, 2, 2);
+	DefaultConst.predefinedGeometries[DefaultConst.cone] = new THREE.ConeGeometry(DefaultConst.defaultRadius, 8, 8);
+	DefaultConst.predefinedGeometries[DefaultConst.torus] = new THREE.TorusGeometry(DefaultConst.defaultRadius, 1);
+	DefaultConst.predefinedGeometries[DefaultConst.sphere].mergeVertices();
+	DefaultConst.predefinedGeometries[DefaultConst.torus].mergeVertices();
+	// // 加载单独的obj文件
+	loadAsset(DefaultConst.teapot, 'assets/teapot.obj');
+	loadAsset(DefaultConst.bunny, 'assets/bunny.obj');
 }
 
 //创建各种材质
@@ -255,12 +260,12 @@ function createPredefinedMaterials() {
 		shininess: 40,
 		specular: 0x222222
 	};
-	predefineMaterials['phongFlat'] = new THREE.MeshPhongMaterial(commonPhongParams);
-	predefineMaterials['phongFlat'].shading = THREE.FlatShading;
-	predefineMaterials['phongSmooth'] = new THREE.MeshPhongMaterial(commonPhongParams);
-	predefineMaterials['phongSmooth'].shading = THREE.SmoothShading;
-	predefineMaterials['lambert'] = new THREE.MeshLambertMaterial({color: currentParams.meshColor});
-	predefineMaterials['normal'] = new THREE.MeshNormalMaterial();
+	DefaultConst.predefineMaterials['phongFlat'] = new THREE.MeshPhongMaterial(commonPhongParams);
+	DefaultConst.predefineMaterials['phongFlat'].shading = THREE.FlatShading;
+	DefaultConst.predefineMaterials['phongSmooth'] = new THREE.MeshPhongMaterial(commonPhongParams);
+	DefaultConst.predefineMaterials['phongSmooth'].shading = THREE.SmoothShading;
+	DefaultConst.predefineMaterials['lambert'] = new THREE.MeshLambertMaterial({color: currentParams.meshColor});
+	DefaultConst.predefineMaterials['normal'] = new THREE.MeshNormalMaterial();
 	// 创建线框材质
 	currentParams.wireMat = new THREE.MeshBasicMaterial({
 		color: currentParams.wireColor,
@@ -280,26 +285,17 @@ function changeAutoRotation() {
 		currentParams.wireMesh.rotation.y = 0;
 		currentParams.origMesh.rotation.x = 0;
 		currentParams.origMesh.rotation.y = 0;
-		startTime = Date.now();
+		DefaultConst.startTime = Date.now();
 	}
 }
 
 
 //界面初始化
 function init() {
-	if (!Detector.webgl)
-		Detector.addGetWebGLMessage();
-	//相机初始化
-	camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, defaultRadius * 10);
-	controls = new THREE.OrbitControls(camera);
-	controls.addEventListener('change', render);
-	//控制器的自定义设置
-	controls.enablePan = false;
-	controls.minDistance = defaultRadius / 4.0;
-	controls.maxDistance = defaultRadius * 4.0;
-	controls.zoomSpeed = defaultRadius / 2.0;
-	controls.target = new THREE.Vector3(0, 0, 0);
-	camera.position.x = defaultRadius * 2.5;
+    //初始化透视相机
+	camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, DefaultConst.defaultRadius * 10);
+	//相机位置
+	camera.position.x = DefaultConst.defaultRadius * 2.5;
 
 	// THREE.Scene 对象是所有不同对象的容器,也就是说该对象保存所有物体、光源、摄像机以及渲染所需的其他对象
 	scene = new THREE.Scene();
@@ -316,12 +312,24 @@ function init() {
 	light = new THREE.AmbientLight( 0x444444 );
 	scene.add( light );
 
-	// 初始化渲染器
+	//初始化渲染器
 	renderer = new THREE.WebGLRenderer( {antialias: true } );
+	//设置渲染尺寸的大小
 	renderer.setSize( window.innerWidth, window.innerHeight );
 	renderer.setClearColor(currentParams.backgroundColor);
+	//webgl渲染的canvas内容添加到dom元素上
 	container = document.getElementById('container');
 	container.appendChild(renderer.domElement);
+
+
+	//控制器的自定义设置
+	controls = new OrbitControls(camera,renderer.domElement);
+	controls.addEventListener('change', render);
+	controls.enablePan = false;
+	controls.minDistance = DefaultConst.defaultRadius / 4.0;
+	controls.maxDistance = DefaultConst.defaultRadius * 4.0;
+	controls.zoomSpeed = DefaultConst.defaultRadius / 2.0;
+	controls.target = new THREE.Vector3(0, 0, 0);
 
 	//设置当前信息变化看板的参数
 	initInfo();
@@ -330,7 +338,7 @@ function init() {
 	initGUI();
 
 	//创建模型加载器
-	objLoader = new THREE.OBJLoader(loadManager);
+	objLoader = new OBJLoader(loadManager);
 
     //加载各类模型信息
     createPredefinedGeometries();
@@ -356,9 +364,9 @@ function init() {
 
 
 function updateScene() {
-	if (infoDirty) {
+	if (DefaultConst.infoDirty) {
 		updateInfo();
-		infoDirty = false;
+		DefaultConst.infoDirty = false;
 	}
 	if (panelShowParams.autoRotate) {
 		let dTime = (Date.now() - startTime) * 0.0005;
@@ -373,7 +381,7 @@ function updateScene() {
 
 function animate() {
 	render();
-	//按帧对网页进行重绘
+	//定时循环操作，调用animate函数逐帧重绘
 	requestAnimationFrame(animate);
 	controls.update();
 }
@@ -388,17 +396,17 @@ function onWindowResize() {
 //渲染函数
 function render() {
 	updateScene();
-	//根据场景信息和相机信息进行渲染
+	//执行渲染
 	renderer.render( scene, camera );
 }
 
 function initGUI(){
 	//dat.GUI中挂载各类下拉框和拉升条及回调函数，并且在内部执行回调操作为param的对应参数赋用户选择的值
 	gui = new dat.GUI();
-	gui.add(panelShowParams, 'geometry', geometriesNamesSelected).name("几何形体").onChange(changeMeshGeometry);
+	gui.add(panelShowParams, 'geometry', DefaultConst.geometriesNamesSelected).name("几何形体").onChange(changeMeshGeometry);
 	//设置细分等级范围
-	paramControllers.subdivAmount = gui.add(panelShowParams, 'subdivAmount', 0, subdivMax).name("细分等级").step(1).onChange(makeSubdivition);
-	gui.add(panelShowParams, 'material', materialNamesSelected).name("材质").onChange(changeMeshMaterial);
+	paramControllers.subdivAmount = gui.add(panelShowParams, 'subdivAmount', 0, DefaultConst.subdivMax).name("细分等级").step(1).onChange(makeSubdivition);
+	gui.add(panelShowParams, 'material', DefaultConst.materialNamesSelected).name("材质").onChange(changeMeshMaterial);
 	gui.addColor(panelShowParams, 'meshColor').name('颜色').onChange(changeMeshColor);
 	gui.add(panelShowParams, 'surface').name("展示/隐藏表面").onChange(changeMeshSurface);
 	gui.addColor(panelShowParams, 'wireColor').name('线框颜色').onChange(changeWireMeshColor);
@@ -430,15 +438,15 @@ function updateInfo() {
 
 //加载OBJ模型方法,加载到数组里
 function loadAsset(predefinedName, assetUrl) {
-	objLoader.load(assetUrl,
-		function(object) {
+	objLoader.load(assetUrl, function(object)
+		{
 			let geom = object.children[0].geometry;
 			let stdGeom = new THREE.Geometry().fromBufferGeometry(geom);
 			stdGeom.computeFaceNormals();
 			stdGeom.mergeVertices();
 			stdGeom.computeVertexNormals();
 			normalizeGeometry(stdGeom);
-			predefinedGeometries[predefinedName] = stdGeom;
+			DefaultConst.predefinedGeometries[predefinedName] = stdGeom;
 		}
 	);
 }

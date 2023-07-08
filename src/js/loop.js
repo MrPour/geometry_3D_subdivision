@@ -363,3 +363,4 @@ class Subdivision{
     }
 }
 
+module.exports  = { Subdivision };
