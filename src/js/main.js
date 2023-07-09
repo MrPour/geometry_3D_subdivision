@@ -9,7 +9,7 @@ import {Subdivision} from './loop.js'
 import {OrbitControls} from 'three/examples/jsm/controls/OrbitControls';
 import {OBJLoader} from "three/examples/jsm/loaders/OBJLoader";
 
-let subdivider,objLoader,loadManager,fopen,info,gui,container,camera, controls, stats, scene, renderer,panelShowParams,panelShowThreeParams = null;
+let subdivider,objLoader,loadManager,fopen,info,gui,container,camera, controls, stats, scene, renderer,panelShowParams,SceneMeshObject = null;
 
 //页面加载完成后调用init方法
 window.addEventListener('load', init);
@@ -21,21 +21,21 @@ function makeSubdivision(num)
 	//如果当前没有细分器，就创建一个
 	if (!subdivider)
 	{
-		subdivider = new Subdivision(panelShowThreeParams.originalGeometry);
+		subdivider = new Subdivision(SceneMeshObject.originalGeometry);
 	}
 	//如果当前传入的细分等级num与目前渲染的细分等级subdivAmount相等，则不需要执行细分操作，否则执行
-	if (num != panelShowThreeParams.subdivAmount) {
+	if (num != SceneMeshObject.subdivAmount) {
 		//为当前参数列表赋值
-		panelShowThreeParams.subdivAmount = num;
+		SceneMeshObject.subdivAmount = num;
 		//调用细分方法进行细分，得到细分后的模型
-		//将模型赋到当前参数列表中
-		panelShowThreeParams.currentGeometry = subdivider.subdivide(num);
-		panelShowThreeParams.mesh.geometry = panelShowThreeParams.currentGeometry;
-		panelShowThreeParams.wireMesh.geometry = panelShowThreeParams.currentGeometry;
+		//将场景中的模型对象进行跟新
+		SceneMeshObject.currentGeometry = subdivider.subdivide(SceneMeshObject.subdivAmount);
+		SceneMeshObject.mesh.geometry = SceneMeshObject.currentGeometry;
+		SceneMeshObject.wireMesh.geometry = SceneMeshObject.currentGeometry;
 		//设置是否显示原始模型
-		panelShowThreeParams.origMesh.visible = panelShowParams.original && num > 0;
+		SceneMeshObject.origMesh.visible = panelShowParams.original && num > 0;
 		//每次细分后更新信息
-		updateInfo();
+		updateInfoBySubdivAmount();
 	}
 }
 
@@ -45,34 +45,34 @@ function changeMeshFromGeometry(geometry) {
 	if (subdivider) {
 		subdivider.dispose();
 		subdivider = null;
-		panelShowThreeParams.subdivAmount = -1;
+		SceneMeshObject.subdivAmount = -1;
 		panelShowParams.subdivAmount = 0;
 
 	}
-	panelShowThreeParams.originalGeometry = geometry;
-	panelShowThreeParams.origMesh.geometry = panelShowThreeParams.originalGeometry;
-	panelShowThreeParams.origMesh.visible = false;
+	SceneMeshObject.originalGeometry = geometry;
+	SceneMeshObject.origMesh.geometry = SceneMeshObject.originalGeometry;
+	SceneMeshObject.origMesh.visible = false;
 	// 创建一个新的细分器
-	subdivider = new Subdivision(panelShowThreeParams.originalGeometry);
-	panelShowThreeParams.currentGeometry = subdivider.subdivide(0);
-	panelShowThreeParams.subdivAmount = 0;
-	panelShowThreeParams.mesh.geometry = panelShowThreeParams.currentGeometry;
-	panelShowThreeParams.wireMesh.geometry = panelShowThreeParams.currentGeometry;
+	subdivider = new Subdivision(SceneMeshObject.originalGeometry);
+	//每次修改的时候都还原为0
+	SceneMeshObject.subdivAmount = 0;
+	SceneMeshObject.currentGeometry = subdivider.subdivide(SceneMeshObject.subdivAmount);
+	SceneMeshObject.mesh.geometry = SceneMeshObject.currentGeometry;
+	SceneMeshObject.wireMesh.geometry = SceneMeshObject.currentGeometry;
 	//每次变换仍然更新细分数据
-	updateInfo();
+	updateInfoBySubdivAmount();
 }
 
 function changeMeshGeometry() {
-	if (panelShowThreeParams.currentGeometryName == 'OBJ file...') {
-		debugger
-		panelShowThreeParams.originalGeometry.dispose();
-		panelShowThreeParams.currentGeometryName = '';
+	if (SceneMeshObject.currentGeometryName == 'OBJ file...') {
+		SceneMeshObject.originalGeometry.dispose();
+		SceneMeshObject.currentGeometryName = '';
 	}
 	if (panelShowParams.geometry == 'OBJ file...') {
 		fopen.click();
 	} else {
+		SceneMeshObject.currentGeometryName = panelShowParams.geometry;
 		changeMeshFromGeometry(DefaultConst.predefinedGeometries[panelShowParams.geometry]);
-		panelShowThreeParams.currentGeometryName = panelShowParams.geometry;
 	}
 }
 
@@ -102,96 +102,96 @@ function normalizeGeometry(geom) {
 
 //材质的切换
 function changeMeshMaterial() {
-	panelShowThreeParams.mesh.material = DefaultConst.predefineMaterials[panelShowParams.material];
-	panelShowThreeParams.material = panelShowParams.material;
-	panelShowThreeParams.mesh.material.needsUpdate = true;
+	SceneMeshObject.mesh.material = DefaultConst.predefineMaterials[panelShowParams.material];
+	SceneMeshObject.material = panelShowParams.material;
+	SceneMeshObject.mesh.material.needsUpdate = true;
 }
 
 //网格颜色的切换
 function changeMeshColor() {
 	//通过panelShowParams转为three的颜色
-	panelShowThreeParams.meshColor = new THREE.Color(parseInt(panelShowParams.meshColor.replace('#', '0x')));
-	DefaultConst.predefineMaterials['phongFlat'].color = panelShowThreeParams.meshColor;
-	DefaultConst.predefineMaterials['phongSmooth'].color = panelShowThreeParams.meshColor;
-	DefaultConst.predefineMaterials['lambert'].color = panelShowThreeParams.meshColor;
-	panelShowThreeParams.mesh.material.needsUpdate = true;
+	SceneMeshObject.meshColor = new THREE.Color(parseInt(panelShowParams.meshColor.replace('#', '0x')));
+	DefaultConst.predefineMaterials['phongFlat'].color = SceneMeshObject.meshColor;
+	DefaultConst.predefineMaterials['phongSmooth'].color = SceneMeshObject.meshColor;
+	DefaultConst.predefineMaterials['lambert'].color = SceneMeshObject.meshColor;
+	SceneMeshObject.mesh.material.needsUpdate = true;
 }
 
 //网格线颜色的切换
 function changeWireMeshColor() {
 	info.style.color = panelShowParams.wireColor;
-	panelShowThreeParams.wireColor = new THREE.Color(parseInt(panelShowParams.wireColor.replace('#', '0x')));
-	panelShowThreeParams.wireMat.color = panelShowThreeParams.wireColor;
-	panelShowThreeParams.wireMat.needsUpdate = true;
+	SceneMeshObject.wireColor = new THREE.Color(parseInt(panelShowParams.wireColor.replace('#', '0x')));
+	SceneMeshObject.wireMat.color = SceneMeshObject.wireColor;
+	SceneMeshObject.wireMat.needsUpdate = true;
 }
 
 //修改初始颜色
 function changeOriginalColor() {
-	panelShowThreeParams.originalColor = new THREE.Color(parseInt(panelShowParams.originalColor.replace('#', '0x')));
-	panelShowThreeParams.origMat.color = panelShowThreeParams.originalColor;
-	panelShowThreeParams.origMat.needsUpdate = true;
+	SceneMeshObject.originalColor = new THREE.Color(parseInt(panelShowParams.originalColor.replace('#', '0x')));
+	SceneMeshObject.origMat.color = SceneMeshObject.originalColor;
+	SceneMeshObject.origMat.needsUpdate = true;
 }
 
 //修改背景颜色
 function changeBackgroundColor() {
-	panelShowThreeParams.backgroundColor = new THREE.Color(parseInt(panelShowParams.backgroundColor.replace('#', '0x')));
-	renderer.setClearColor(panelShowThreeParams.backgroundColor);
+	SceneMeshObject.backgroundColor = new THREE.Color(parseInt(panelShowParams.backgroundColor.replace('#', '0x')));
+	renderer.setClearColor(SceneMeshObject.backgroundColor);
 }
 
 //切换是否显示网格曲面
 function changeMeshSurface() {
-	panelShowThreeParams.mesh.visible = panelShowParams.surface;
+	SceneMeshObject.mesh.visible = panelShowParams.surface;
 }
 
 //切换是否显示网格线
 function changeMeshWireframe() {
-	panelShowThreeParams.wireMesh.visible = panelShowParams.wireframe;
+	SceneMeshObject.wireMesh.visible = panelShowParams.wireframe;
 }
 
 //原模型是否可见
 function changeMeshOriginal() {
 	//只有选择可见并且细分等级>0的情况下才可见原始线框
-	panelShowThreeParams.origMesh.visible = panelShowParams.original && panelShowThreeParams.subdivAmount > 0;
+	SceneMeshObject.origMesh.visible = panelShowParams.original && SceneMeshObject.subdivAmount > 0;
 }
 
-//默认几何形体加入场景
-function createDefaultGeometry() {
-	//读取初始的几何模型
-	panelShowThreeParams.originalGeometry = DefaultConst.predefinedGeometries[panelShowParams.geometry];
+//几何形体加入场景
+function addGeometryIntoScene() {
+	//根据当前面板的几何标识读取细分开始之前的几何模型
+	SceneMeshObject.originalGeometry = DefaultConst.predefinedGeometries[panelShowParams.geometry];
 	//细分器初始化
-	subdivider = new Subdivision(panelShowThreeParams.originalGeometry);
+	subdivider = new Subdivision(SceneMeshObject.originalGeometry);
 	//细分等级设定
-	panelShowThreeParams.subdivAmount = 0;
+	SceneMeshObject.subdivAmount = 0;
 	//细分后的几何形体设定
-	panelShowThreeParams.currentGeometry = subdivider.subdivide(panelShowThreeParams.subdivAmount);
+	SceneMeshObject.currentGeometry = subdivider.subdivide(SceneMeshObject.subdivAmount);
 	//使用three.js根据几何形体设置初始的网格
-	panelShowThreeParams.mesh = new THREE.Mesh(
-		panelShowThreeParams.currentGeometry
+	SceneMeshObject.mesh = new THREE.Mesh(
+		SceneMeshObject.currentGeometry
 	);
 	//加载默认材质
 	changeMeshMaterial();
 
-	//将形初始几何模型加入到THREE.Scene的场景里
-	scene.add(panelShowThreeParams.mesh);
+	//将形几何模型加入到THREE.Scene的场景里
+	scene.add(SceneMeshObject.mesh);
 
 	//three.js生成网格线并加入
 	//几何体是不能被渲染的，只有几何体和材质结合成网格才能被渲染到屏幕上
-	panelShowThreeParams.wireMesh = new THREE.Mesh(
-		panelShowThreeParams.currentGeometry,
-		panelShowThreeParams.wireMat
+	SceneMeshObject.wireMesh = new THREE.Mesh(
+		SceneMeshObject.currentGeometry,
+		SceneMeshObject.wireMat
 	);
-	//将细分后的几何图形加载到场景
-	scene.add(panelShowThreeParams.wireMesh);
+	//将细分后的几何线框载到场景
+	scene.add(SceneMeshObject.wireMesh);
 
     //three.js生成原始线框并加入
-	panelShowThreeParams.origMesh = new THREE.Mesh(
-		panelShowThreeParams.originalGeometry,
-		panelShowThreeParams.origMat
+	SceneMeshObject.origMesh = new THREE.Mesh(
+		SceneMeshObject.originalGeometry,
+		SceneMeshObject.origMat
 	);
 	//原始图形默认不可见
-	panelShowThreeParams.origMesh.visible = false;
-	//将默认的几何图形加载到场景
-	scene.add(panelShowThreeParams.origMesh);
+	SceneMeshObject.origMesh.visible = false;
+	//将原始几何图形的几何线框加载到场景
+	scene.add(SceneMeshObject.origMesh);
 }
 
 //three.js提供的各类模型，对模型进行初始化
@@ -207,14 +207,14 @@ function loadPredefinedGeometries() {
 	DefaultConst.predefinedGeometries[DefaultConst.sphere].mergeVertices();
 	DefaultConst.predefinedGeometries[DefaultConst.torus].mergeVertices();
 	// // 加载单独的obj文件
-	loadAsset(DefaultConst.teapot, 'assets/teapot.obj');
-	loadAsset(DefaultConst.bunny, 'assets/bunny.obj');
+	loadAssetToPredefinedGeometries(DefaultConst.teapot, 'assets/teapot.obj');
+	loadAssetToPredefinedGeometries(DefaultConst.bunny, 'assets/bunny.obj');
 }
 
 //创建各种材质
 function loadPredefinedMaterials() {
 	let commonPhongParams = {
-		color: panelShowThreeParams.meshColor,
+		color: SceneMeshObject.meshColor,
 		shininess: 40,
 		specular: 0x222222
 	};
@@ -222,27 +222,27 @@ function loadPredefinedMaterials() {
 	DefaultConst.predefineMaterials['phongFlat'].shading = THREE.FlatShading;
 	DefaultConst.predefineMaterials['phongSmooth'] = new THREE.MeshPhongMaterial(commonPhongParams);
 	DefaultConst.predefineMaterials['phongSmooth'].shading = THREE.SmoothShading;
-	DefaultConst.predefineMaterials['lambert'] = new THREE.MeshLambertMaterial({color: panelShowThreeParams.meshColor});
+	DefaultConst.predefineMaterials['lambert'] = new THREE.MeshLambertMaterial({color: SceneMeshObject.meshColor});
 	DefaultConst.predefineMaterials['normal'] = new THREE.MeshNormalMaterial();
 	// 创建线框材质
-	panelShowThreeParams.wireMat = new THREE.MeshBasicMaterial({
-		color: panelShowThreeParams.wireColor,
+	SceneMeshObject.wireMat = new THREE.MeshBasicMaterial({
+		color: SceneMeshObject.wireColor,
 		wireframe: true
 	});
-	panelShowThreeParams.origMat = new THREE.MeshBasicMaterial({
-		color: panelShowThreeParams.originalColor,
+	SceneMeshObject.origMat = new THREE.MeshBasicMaterial({
+		color: SceneMeshObject.originalColor,
 		wireframe: true
 	});
 }
 //自动旋转开闭
 function changeAutoRotation() {
 	if (!panelShowParams.autoRotate) {
-		panelShowThreeParams.mesh.rotation.x = 0;
-		panelShowThreeParams.mesh.rotation.y = 0;
-		panelShowThreeParams.wireMesh.rotation.x = 0;
-		panelShowThreeParams.wireMesh.rotation.y = 0;
-		panelShowThreeParams.origMesh.rotation.x = 0;
-		panelShowThreeParams.origMesh.rotation.y = 0;
+		SceneMeshObject.mesh.rotation.x = 0;
+		SceneMeshObject.mesh.rotation.y = 0;
+		SceneMeshObject.wireMesh.rotation.x = 0;
+		SceneMeshObject.wireMesh.rotation.y = 0;
+		SceneMeshObject.origMesh.rotation.x = 0;
+		SceneMeshObject.origMesh.rotation.y = 0;
 		DefaultConst.startTime = Date.now();
 	}
 }
@@ -254,7 +254,8 @@ function init() {
 	scene = new THREE.Scene();
 	//界面实时数据
     initPanelShowParam();
-	//Three实时参数
+
+	//Three绑定到scene里的实时参数，只需要改变mesh参数，scene里的几何图形就会变化
 	initCurrentParam();
 
     //1、初始化透视相机
@@ -287,52 +288,44 @@ function init() {
     //加载各类材质信息
 	loadPredefinedMaterials();
 
-	//在场景中初始化几何形体
-	createDefaultGeometry();
+	//在场景中添加几何形体
+	addGeometryIntoScene();
 
-	//显示信息
-	updateInfo();
+	// //显示看板信息
+	// updateInfoBySubdivAmount();
 
 	//初始化自动旋转功能
-	updateScene();
-
-	//窗口大小变化时相机随之变化
-	onWindowResize();
+	setAutoRotate();
 
 	//Three.js执行渲染
 	animate();
 }
 
 
-function updateScene() {
+function setAutoRotate() {
 	if (panelShowParams.autoRotate) {
 		let dTime = (Date.now() - DefaultConst.startTime) * 0.0005;
-		panelShowThreeParams.mesh.rotation.x = dTime;
-		panelShowThreeParams.mesh.rotation.y = dTime;
-		panelShowThreeParams.wireMesh.rotation.x = dTime;
-		panelShowThreeParams.wireMesh.rotation.y = dTime;
-		panelShowThreeParams.origMesh.rotation.x = dTime;
-		panelShowThreeParams.origMesh.rotation.y = dTime;
+		SceneMeshObject.mesh.rotation.x = dTime;
+		SceneMeshObject.mesh.rotation.y = dTime;
+		SceneMeshObject.wireMesh.rotation.x = dTime;
+		SceneMeshObject.wireMesh.rotation.y = dTime;
+		SceneMeshObject.origMesh.rotation.x = dTime;
+		SceneMeshObject.origMesh.rotation.y = dTime;
 	}
 }
 
 function animate() {
 	render();
-	//定时循环操作，调用animate函数逐帧重绘
+	//下次重绘之前，调用animate函数进行渲染
 	requestAnimationFrame(animate);
 	controls.update();
-}
-//窗口变化
-function onWindowResize() {
-	camera.aspect = window.innerWidth / window.innerHeight;
-	camera.updateProjectionMatrix();
-	renderer.setSize( window.innerWidth, window.innerHeight );
-	render();
 }
 
 //渲染函数
 function render() {
-	updateScene();
+	//每次渲染后执行之前的旋转设置
+	setAutoRotate();
+	//每次渲染后统计性能信息
 	stats.update();
 	//执行渲染
 	renderer.render( scene, camera );
@@ -374,7 +367,7 @@ function initPanelShowParam() {
 }
 
 function initCurrentParam(){
-	panelShowThreeParams = {
+	SceneMeshObject = {
 		currentGeometryName: panelShowParams.geometry,
 		subdivAmount: -1,
 		originalGeometry: null,
@@ -422,7 +415,7 @@ function initRenderer(){
 	renderer = new THREE.WebGLRenderer( {antialias: true } );
 	//设置渲染尺寸的大小
 	renderer.setSize( window.innerWidth, window.innerHeight );
-	renderer.setClearColor(panelShowThreeParams.backgroundColor);
+	renderer.setClearColor(SceneMeshObject.backgroundColor);
 	//webgl渲染的canvas内容添加到dom元素上
 	container = document.getElementById('container');
 	container.appendChild(renderer.domElement);
@@ -451,15 +444,15 @@ function initInfoBand(){
 }
 
 // 当前信息变更
-function updateInfo() {
+function updateInfoBySubdivAmount() {
 	info.innerHTML = '初始顶点数: ' + subdivider.cachedBandInfo[0].vertexCount + ' | 初始面片数: ' + subdivider.cachedBandInfo[0].faceCount;
-	info.innerHTML += '<br>当前细分级别: ' + panelShowThreeParams.subdivAmount;
-	info.innerHTML += '<br>当前顶点数: ' + subdivider.cachedBandInfo[panelShowThreeParams.subdivAmount].vertexCount;
-	info.innerHTML += ' | 当前面片数: ' + subdivider.cachedBandInfo[panelShowThreeParams.subdivAmount].faceCount;
+	info.innerHTML += '<br>当前细分级别: ' + SceneMeshObject.subdivAmount;
+	info.innerHTML += '<br>当前顶点数: ' + subdivider.cachedBandInfo[SceneMeshObject.subdivAmount].vertexCount;
+	info.innerHTML += ' | 当前面片数: ' + subdivider.cachedBandInfo[SceneMeshObject.subdivAmount].faceCount;
 }
 
 //加载OBJ模型方法,加载到数组里
-function loadAsset(predefinedName, assetUrl) {
+function loadAssetToPredefinedGeometries(predefinedName, assetUrl) {
 	objLoader.load(assetUrl, function(object)
 		{
 			let geom = object.children[0].geometry;
