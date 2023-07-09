@@ -33,6 +33,7 @@ export default {
         "六边环",
         "茶杯",
         "兔子",
+        "OBJ file..."
 ],
     //定义材质选择下拉框
     materialNamesSelected : [

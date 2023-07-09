@@ -161,7 +161,7 @@ export class Subdivision{
         //初始化形体缓存数组
         this.cachedDividedGeometry = [];
         //初始化看板数据vertexCount和faceCount的缓冲数组
-        this.info = [{
+        this.cachedBandInfo = [{
             //初始顶点数
             vertexCount : this.initialGeometry.getAttribute("position").array.length / 3,
             //初始面片数
@@ -197,7 +197,7 @@ export class Subdivision{
             //存入缓存
             this.cachedDividedGeometry[cacheIndex] = thisGeometry;
             //存入看板数据vertexCount和faceCount
-            this.info[num] = {
+            this.cachedBandInfo[num] = {
                 //初始顶点数
                 vertexCount : thisGeometry.getAttribute("position").array.length/3,
                 //初始面片数
