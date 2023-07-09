@@ -119,7 +119,7 @@ class BetaFactorCache{
 }
 
 //定义细分器 构造函数需要传入一个模型geometry
-class Subdivision{
+export class Subdivision{
     constructor(geometry) {
         if(geometry instanceof THREE.Geometry)
         {
@@ -362,5 +362,3 @@ class Subdivision{
         return subdivide;
     }
 }
-
-module.exports  = { Subdivision };

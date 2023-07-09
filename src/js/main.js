@@ -1,10 +1,14 @@
+//使用的export default，所以不能加{}
 import DefaultConst from './const.js';
-import {Subdivision} from './loop.js'
+//源码使用的module.exports，所以不能加{}
+import Stats from 'three/examples/js/libs/stats.min'
 
+//源码使用的export，所以需要加{}，而且命名要相同
+import {Subdivision} from './loop.js'
 import {OrbitControls} from 'three/examples/jsm/controls/OrbitControls';
 import {OBJLoader} from "three/examples/jsm/loaders/OBJLoader";
 
-let subdivider,objLoader,loadManager,fopen,info,gui,container,camera, controls, scene, renderer = null;
+let subdivider,objLoader,loadManager,fopen,info,gui,container,camera, controls, stats, scene, renderer = null;
 
 //页面加载完成后调用init方法
 window.addEventListener('load', init);
@@ -310,6 +314,14 @@ function init() {
 	light = new THREE.AmbientLight( 0x444444 );
 	scene.add( light );
 
+	// 设置stats样式
+	stats = new Stats();
+	stats.dom.style.position = 'absolute';
+	stats.dom.style.top = '10px';
+	stats.dom.style.left = '10px';
+	stats.showPanel(0);
+	document.body.appendChild(stats.dom);
+
 	//初始化渲染器
 	renderer = new THREE.WebGLRenderer( {antialias: true } );
 	//设置渲染尺寸的大小
@@ -394,6 +406,7 @@ function onWindowResize() {
 //渲染函数
 function render() {
 	updateScene();
+	stats.update();
 	//执行渲染
 	renderer.render( scene, camera );
 }

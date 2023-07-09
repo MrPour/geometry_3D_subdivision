@@ -1,4 +1,4 @@
-module.exports = {
+export default {
      tetrahedron : "四面体",
      cube : "立方体",
      sphere : "球体",
@@ -9,21 +9,11 @@ module.exports = {
      torus : "六边环",
      teapot : "茶杯",
      bunny : "兔子",
-     subdivMax : 8,
-     uint32Max : 4294967295,
-    //几何图形的默认半径
-     defaultRadius : 4,
-    // 细分等级最大值
-     subdivMax : 8,
-     uint32Max : 4294967295,
     //几何图形的默认半径
      defaultRadius : 4,
     // 细分等级最大值
     subdivMax : 8,
     uint32Max : 4294967295,
-    //几何图形的默认半径
-    defaultRadius : 4,
-
     startTime : Date.now(),
     infoDirty : false,
 
