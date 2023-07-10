@@ -360,10 +360,12 @@ function initUploadDiv(){
 	fileOpen.accept = '.obj';
 	fileOpen.style.visibility = 'hidden';
 	//上传完毕后会调用加载函数
-	fileOpen.onchange = ()=>{
+	fileOpen.onchange = (event)=>{
 		const objFile = fileOpen.files[0];
 		const url = window.URL.createObjectURL(objFile);
 		loadAssetFromOBJ(url);
+		//解决不能重复上传相同文件的问题
+		event.target.value = null;
 	};
 }
 function initPanelShowParam() {
