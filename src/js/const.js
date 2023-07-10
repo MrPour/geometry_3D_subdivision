@@ -1,3 +1,4 @@
+//导出一个对象
 export default {
      tetrahedron : "四面体",
      cube : "立方体",
@@ -42,6 +43,31 @@ export default {
     'lambert',
     'normal',
      ],
+    loadPredefinedGeometries(){
+        this.predefinedGeometries[this.tetrahedron] = new THREE.TetrahedronGeometry(this.defaultRadius);
+        this.predefinedGeometries[this.cube] = new THREE.BoxGeometry(this.defaultRadius, this.defaultRadius, this.defaultRadius);
+        this.predefinedGeometries[this.sphere] = new THREE.SphereGeometry(this.defaultRadius, 16, 9);
+        this.predefinedGeometries[this.icosahedron] = new THREE.IcosahedronGeometry(this.defaultRadius);
+        this.predefinedGeometries[this.dodecahedron] = new THREE.DodecahedronGeometry(this.defaultRadius);
+        this.predefinedGeometries[this.plane] = new THREE.PlaneGeometry(this.defaultRadius * 2, 2, 2, 2);
+        this.predefinedGeometries[this.cone] = new THREE.ConeGeometry(this.defaultRadius, 8, 8);
+        this.predefinedGeometries[this.torus] = new THREE.TorusGeometry(this.defaultRadius, 1);
+        this.predefinedGeometries[this.sphere].mergeVertices();
+        this.predefinedGeometries[this.torus].mergeVertices();
+    },
+    loadPredefinedMaterials(commonPhongParams,commonLambert){
+        this.predefineMaterials['phongFlat'] = new THREE.MeshPhongMaterial(commonPhongParams);
+        this.predefineMaterials['phongFlat'].shading = THREE.FlatShading;
+        this.predefineMaterials['phongSmooth'] = new THREE.MeshPhongMaterial(commonPhongParams);
+        this.predefineMaterials['phongSmooth'].shading = THREE.SmoothShading;
+        this.predefineMaterials['lambert'] = new THREE.MeshLambertMaterial(commonLambert);
+        this.predefineMaterials['normal'] = new THREE.MeshNormalMaterial();
+    },
+    changePredefinedMaterialsColor(color){
+        this.predefineMaterials['phongFlat'].color = color;
+        this.predefineMaterials['phongSmooth'].color = color;
+        this.predefineMaterials['lambert'].color = color;
+    }
 }
 
 

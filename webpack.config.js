@@ -23,9 +23,7 @@ module.exports = {
         }),
         //设置全局变量
         new webpack.ProvidePlugin({
-            THREE:'three',
-            dat:'dat.gui',
-            Detector:'./threejs/js/Detector.js'
+            THREE:'three'
         }),
         //将obj文件拷贝到dist目录下
         new CopyPlugin({
