@@ -9,7 +9,7 @@ import {Subdivision} from './loop.js'
 import {OrbitControls} from 'three/examples/jsm/controls/OrbitControls';
 import {OBJLoader} from "three/examples/jsm/loaders/OBJLoader";
 
-let subdivider,objLoader,loadManager,fopen,info,gui,container,camera, controls, stats, scene, renderer,panelShowParams,SceneMeshObject = null;
+let subdivider,objLoader,loadManager,fileOpen,info,gui,container,camera, controls, stats, scene, renderer,panelShowParams,SceneMeshObject = null;
 
 //页面加载完成后调用init方法
 window.addEventListener('load', init);
@@ -68,8 +68,10 @@ function changeMeshGeometry() {
 		SceneMeshObject.originalGeometry.dispose();
 		SceneMeshObject.currentGeometryName = '';
 	}
+
 	if (panelShowParams.geometry == 'OBJ file...') {
-		fopen.click();
+		//触发click事件，弹出上传框
+		fileOpen.click();
 	} else {
 		SceneMeshObject.currentGeometryName = panelShowParams.geometry;
 		changeMeshFromGeometry(DefaultConst.predefinedGeometries[panelShowParams.geometry]);
@@ -281,6 +283,7 @@ function init() {
 
 	//8、创建模型加载器
 	objLoader = new OBJLoader(loadManager);
+	initUploadDiv();
 
     //加载各类模型信息
     loadPredefinedGeometries();
@@ -348,6 +351,20 @@ function initGUI(){
 	gui.add(panelShowParams, 'original').name('展示/隐藏初始').onChange(changeMeshOriginal);
 	gui.addColor(panelShowParams, 'backgroundColor').name('背景色').onChange(changeBackgroundColor);
 	gui.add(panelShowParams, 'autoRotate').name("自动旋转").onChange(changeAutoRotation);
+}
+
+function initUploadDiv(){
+	//创建一个file类型的div，接收.obj的文件，该div被点击后会弹出上传窗口
+	fileOpen = document.createElement('input');
+	fileOpen.type = 'file';
+	fileOpen.accept = '.obj';
+	fileOpen.style.visibility = 'hidden';
+	//上传完毕后会调用加载函数
+	fileOpen.onchange = ()=>{
+		const objFile = fileOpen.files[0];
+		const url = window.URL.createObjectURL(objFile);
+		loadAssetFromOBJ(url);
+	};
 }
 function initPanelShowParam() {
 	//界面的初始化参数
@@ -462,6 +479,24 @@ function loadAssetToPredefinedGeometries(predefinedName, assetUrl) {
 			stdGeom.computeVertexNormals();
 			normalizeGeometry(stdGeom);
 			DefaultConst.predefinedGeometries[predefinedName] = stdGeom;
+			geom.dispose();
+		}
+	);
+}
+
+function loadAssetFromOBJ(assetUrl) {
+	objLoader.load(assetUrl, function(object)
+		{
+			let geom = object.children[0].geometry;
+			let stdGeom = new THREE.Geometry().fromBufferGeometry(geom);
+			stdGeom.computeFaceNormals();
+			stdGeom.mergeVertices();
+			stdGeom.computeVertexNormals();
+			normalizeGeometry(stdGeom);
+			//立刻加载
+			changeMeshFromGeometry(stdGeom);
+			SceneMeshObject.currentGeometryName = 'OBJ file...';
+			geom.dispose();
 		}
 	);
 }
